@@ -13,6 +13,16 @@ Requiere Python 3.12.
 
 El servidor local queda disponible en `http://127.0.0.1:8010/`.
 
+## Cuentas de demostración
+
+| Rol | Correo | Contraseña |
+| --- | --- | --- |
+| Gerente | `gerente.demo@pagos.invalid` | `DemoPagos2026!` |
+| Asistente | `asistente.demo@pagos.invalid` | `DemoPagos2026!` |
+
+El script `seed_demo_data.py` crea o actualiza estas cuentas conservando las
+relaciones existentes de los datos demo.
+
 Para reconstruir el entorno en una máquina nueva:
 
 ```powershell

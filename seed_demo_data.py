@@ -26,6 +26,40 @@ from payments.models import (
     PaymentCommitment,
 )
 
+
+DEMO_PASSWORD = "DemoPagos2026!"
+MANAGER_EMAIL = "gerente.demo@pagos.invalid"
+ASSISTANT_EMAIL = "asistente.demo@pagos.invalid"
+
+
+def ensure_demo_account(*, email, legacy_email, password, display_name, role, is_staff=False):
+    """Create or upgrade a demo account without breaking existing relations."""
+    account = Account.objects.filter(email=email).first()
+    if account is None:
+        account = Account.objects.filter(email=legacy_email).first()
+
+    if account is None:
+        account = Account.objects.create_user(
+            email=email,
+            password=password,
+            display_name=display_name,
+            role=role,
+            is_staff=is_staff,
+        )
+        created = True
+    else:
+        account.email = email
+        account.display_name = display_name
+        account.role = role
+        account.is_staff = is_staff
+        account.is_active = True
+        account.set_password(password)
+        account.save()
+        created = False
+
+    return account, created
+
+
 def run():
     print("Iniciando sembrado de datos de prueba...")
 
@@ -35,36 +69,25 @@ def run():
     role_assistant, _ = Role.objects.get_or_create(code=Role.Code.ASSISTANT, defaults={"name": "Asistente"})
 
     # 2. Cuentas de usuario
-    # Gerente
-    gerente = Account.objects.filter(email="gerente@empresa.com").first()
-    if not gerente:
-        gerente = Account.objects.create_user(
-            email="gerente@empresa.com",
-            password="gerente123",
-            display_name="Carlos Mendoza (Gerente)",
-            role=role_manager,
-            is_staff=True,
-        )
-        print("[OK] Usuario Gerente creado: gerente@empresa.com / gerente123")
-    else:
-        gerente.set_password("gerente123")
-        gerente.role = role_manager
-        gerente.save()
-
-    # Asistente
-    asistente = Account.objects.filter(email="asistente@empresa.com").first()
-    if not asistente:
-        asistente = Account.objects.create_user(
-            email="asistente@empresa.com",
-            password="asistente123",
-            display_name="Ana Valenzuela (Asistente)",
-            role=role_assistant,
-        )
-        print("[OK] Usuario Asistente creado: asistente@empresa.com / asistente123")
-    else:
-        asistente.set_password("asistente123")
-        asistente.role = role_assistant
-        asistente.save()
+    gerente, gerente_created = ensure_demo_account(
+        email=MANAGER_EMAIL,
+        legacy_email="gerente@empresa.com",
+        password=DEMO_PASSWORD,
+        display_name="Carlos Mendoza (Gerente)",
+        role=role_manager,
+        is_staff=True,
+    )
+    asistente, asistente_created = ensure_demo_account(
+        email=ASSISTANT_EMAIL,
+        legacy_email="asistente@empresa.com",
+        password=DEMO_PASSWORD,
+        display_name="Ana Valenzuela (Asistente)",
+        role=role_assistant,
+    )
+    gerente_status = "creado" if gerente_created else "actualizado"
+    asistente_status = "creado" if asistente_created else "actualizado"
+    print(f"[OK] Usuario Gerente {gerente_status}: {MANAGER_EMAIL} / {DEMO_PASSWORD}")
+    print(f"[OK] Usuario Asistente {asistente_status}: {ASSISTANT_EMAIL} / {DEMO_PASSWORD}")
 
     # 3. Empresa y Locales
     empresa, _ = Company.objects.get_or_create(name="Grupo Gastronómico & Retail S.A.C.")
@@ -305,8 +328,8 @@ def run():
         )
 
     print("[OK] Datos de prueba sembrados exitosamente:")
-    print("  - 1 Gerente: gerente@empresa.com / gerente123")
-    print("  - 1 Asistente: asistente@empresa.com / asistente123")
+    print(f"  - 1 Gerente: {MANAGER_EMAIL} / {DEMO_PASSWORD}")
+    print(f"  - 1 Asistente: {ASSISTANT_EMAIL} / {DEMO_PASSWORD}")
     print("  - Obligaciones creadas: Vencido, Vence Hoy, Proximos, Futuro y Pagado con comprobante.")
 
 if __name__ == "__main__":
