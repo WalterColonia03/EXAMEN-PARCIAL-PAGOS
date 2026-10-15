@@ -24,6 +24,11 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+# Aíslan este proyecto de otros servidores Django que el navegador pueda abrir
+# en localhost, incluso si usan otro puerto.
+SESSION_COOKIE_NAME = "pagocontrol_session"
+CSRF_COOKIE_NAME = "pagocontrol_csrf"
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
