@@ -1,0 +1,123 @@
+{% extends "payments/base.html" %}
+
+{% block title %}Nuevo compromiso de pago{% endblock %}
+
+{% block content %}
+
+<nav class="flex items-center gap-2 text-sm text-muted mb-4" aria-label="Ruta de navegación">
+  <a href="{% url 'payments-board' %}" class="flex items-center gap-1">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Tablero
+  </a>
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+  <span aria-current="page">Nuevo compromiso</span>
+</nav>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Configurar compromiso recurrente</h1>
+    <p class="page-subtitle">Define la regla de un servicio, proveedor o impuesto. Luego generarás obligaciones concretas para cada período, sin repetir datos.</p>
+  </div>
+</div>
+
+<aside class="context-note" aria-label="Qué es un compromiso">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v5M12 7h.01"/></svg>
+  <span>Un compromiso conserva la configuración recurrente; una obligación es el importe concreto que vence en un período. Desactivarlo no borra su historial.</span>
+</aside>
+
+<div class="card card-padded">
+  <form method="post" id="form-nuevo-compromiso">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <ul class="errorlist non-field-errors" role="alert">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <div class="form-grid">
+
+      <!-- Nombre -->
+      <div class="form-field full-width">
+        <label for="{{ form.name.id_for_label }}" class="form-label">Nombre del compromiso <span class="text-danger">*</span></label>
+        {{ form.name }}
+        {% if form.name.errors %}<ul class="errorlist">{% for e in form.name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- Categoría -->
+      <div class="form-field">
+        <label for="{{ form.category.id_for_label }}" class="form-label">Categoría <span class="text-danger">*</span></label>
+        {{ form.category }}
+        {% if form.category.errors %}<ul class="errorlist">{% for e in form.category.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- Frecuencia -->
+      <div class="form-field">
+        <label for="{{ form.frequency.id_for_label }}" class="form-label">Frecuencia <span class="text-danger">*</span></label>
+        {{ form.frequency }}
+        {% if form.frequency.errors %}<ul class="errorlist">{% for e in form.frequency.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- Empresa -->
+      <div class="form-field">
+        <label for="{{ form.company.id_for_label }}" class="form-label">Empresa <span class="text-danger">*</span></label>
+        {{ form.company }}
+        {% if form.company.errors %}<ul class="errorlist">{% for e in form.company.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- Local -->
+      <div class="form-field">
+        <label for="{{ form.branch.id_for_label }}" class="form-label">Local (opcional)</label>
+        {{ form.branch }}
+        {% if form.branch.errors %}<ul class="errorlist">{% for e in form.branch.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- Acreedor -->
+      <div class="form-field">
+        <label for="{{ form.creditor.id_for_label }}" class="form-label">Acreedor <span class="text-danger">*</span></label>
+        {{ form.creditor }}
+        {% if form.creditor.errors %}<ul class="errorlist">{% for e in form.creditor.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- Día habitual de vencimiento -->
+      <div class="form-field">
+        <label for="{{ form.usual_due_day.id_for_label }}" class="form-label">Día habitual de vencimiento</label>
+        {{ form.usual_due_day }}
+        {% if form.usual_due_day.errors %}<ul class="errorlist">{% for e in form.usual_due_day.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <p class="help-text">{{ form.usual_due_day.help_text }}</p>
+      </div>
+
+      <!-- Modo de monto -->
+      <div class="form-field">
+        <label for="{{ form.amount_mode.id_for_label }}" class="form-label">Tipo de monto <span class="text-danger">*</span></label>
+        {{ form.amount_mode }}
+        {% if form.amount_mode.errors %}<ul class="errorlist">{% for e in form.amount_mode.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- Monto fijo -->
+      <div class="form-field">
+        <label for="{{ form.fixed_amount.id_for_label }}" class="form-label">Monto fijo (S/)</label>
+        {{ form.fixed_amount }}
+        {% if form.fixed_amount.errors %}<ul class="errorlist">{% for e in form.fixed_amount.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <p class="help-text">{{ form.fixed_amount.help_text }}</p>
+      </div>
+
+      <!-- Cuenta de destino -->
+      <div class="form-field">
+        <label for="{{ form.destination_account.id_for_label }}" class="form-label">Cuenta de destino</label>
+        {{ form.destination_account }}
+        {% if form.destination_account.errors %}<ul class="errorlist">{% for e in form.destination_account.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <p class="help-text">Solo cuentas autorizadas por el gerente.</p>
+      </div>
+
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" id="btn-guardar-compromiso">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+        Guardar compromiso
+      </button>
+      <a href="{% url 'payments-board' %}" class="btn btn-secondary" id="btn-cancelar-compromiso">Cancelar</a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

@@ -1,0 +1,109 @@
+{% extends "payments/base.html" %}
+
+{% block title %}Cuentas de destino{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Cuentas autorizadas</h1>
+    <p class="page-subtitle">El gerente define los destinos permitidos; el asistente solo puede consultarlos al registrar una obligación.</p>
+  </div>
+</div>
+
+<div class="detail-grid">
+
+  <!-- ── Formulario nueva cuenta ──────────────────────── -->
+  <div>
+    <div class="card card-padded">
+      <h2 class="section-heading">Registrar cuenta de destino</h2>
+      <form method="post" id="form-nueva-cuenta">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <ul class="errorlist non-field-errors" role="alert">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endif %}
+
+        <div class="form-grid" style="grid-template-columns:1fr">
+          <div class="form-field">
+            <label for="{{ form.creditor.id_for_label }}" class="form-label">Acreedor <span class="text-danger">*</span></label>
+            {{ form.creditor }}
+            {% if form.creditor.errors %}<ul class="errorlist">{% for e in form.creditor.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.bank_name.id_for_label }}" class="form-label">Banco <span class="text-danger">*</span></label>
+            {{ form.bank_name }}
+            {% if form.bank_name.errors %}<ul class="errorlist">{% for e in form.bank_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.account_holder.id_for_label }}" class="form-label">Titular <span class="text-danger">*</span></label>
+            {{ form.account_holder }}
+            {% if form.account_holder.errors %}<ul class="errorlist">{% for e in form.account_holder.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.account_number.id_for_label }}" class="form-label">Número de cuenta <span class="text-danger">*</span></label>
+            {{ form.account_number }}
+            {% if form.account_number.errors %}<ul class="errorlist">{% for e in form.account_number.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+            <p class="help-text">Use números de demostración (Ej. DEMO-00123456789).</p>
+          </div>
+          <div class="checkbox-row">
+            {{ form.is_active }}
+            <label for="{{ form.is_active.id_for_label }}" class="checkbox-label">Cuenta activa</label>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="btn-guardar-cuenta">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+            Guardar cuenta
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Lista de cuentas ─────────────────────────────── -->
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <h2 class="section-heading">Cuentas registradas</h2>
+    {% if accounts %}
+      {% for account in accounts %}
+      <div class="account-card {% if not account.is_active %}inactive{% endif %}" {% if not account.is_active %}style="opacity:.6"{% endif %}>
+        <div class="account-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        </div>
+        <div class="account-info">
+          <div class="account-name">{{ account.creditor.name }}</div>
+          <div class="account-detail">{{ account.bank_name }} · {{ account.account_holder }}</div>
+          <div class="account-number">{{ account.account_number }}</div>
+          {% if account.updated_by %}
+          <div class="text-xs text-muted" style="margin-top:6px">
+            Actualizado por {{ account.updated_by.get_short_name|default:account.updated_by.username }} el {{ account.updated_at|date:"d/m/Y" }}
+          </div>
+          {% endif %}
+        </div>
+        <div class="flex-col gap-2" style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+          {% if account.is_active %}
+          <span class="status-badge s-paid">Activa</span>
+          {% else %}
+          <span class="status-badge s-suspended">Inactiva</span>
+          {% endif %}
+          <a href="{% url 'payment-destination-account-edit' account.pk %}" class="btn btn-secondary btn-sm" id="btn-editar-cuenta-{{ account.pk }}">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Editar
+          </a>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+    <div class="card">
+      <div class="empty-state" style="padding:40px 24px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        <p class="empty-state-title">Sin cuentas registradas</p>
+        <p class="empty-state-desc">Use el formulario para registrar la primera cuenta autorizada.</p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

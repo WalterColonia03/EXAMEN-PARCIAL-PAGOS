@@ -1,0 +1,100 @@
+{% extends "payments/base.html" %}
+{% load humanize %}
+
+{% block title %}Historial de pagos{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Pagos realizados</h1>
+    <p class="page-subtitle">Consulta la evidencia y quién registró cada pago, sin mezclarla con el trabajo pendiente.</p>
+  </div>
+</div>
+
+<!-- Filtros -->
+<form method="get" class="filter-bar" role="search" aria-label="Filtros del historial">
+  <label for="{{ filter_form.company.id_for_label }}">Empresa</label>
+  {{ filter_form.company }}
+  <label for="{{ filter_form.branch.id_for_label }}">Local</label>
+  {{ filter_form.branch }}
+  <button type="submit" class="btn btn-secondary btn-sm" id="btn-filtrar-historial">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+    Filtrar
+  </button>
+  {% if request.GET %}
+  <a href="{% url 'payment-history' %}" class="btn btn-secondary btn-sm" id="btn-limpiar-historial">Limpiar</a>
+  {% endif %}
+</form>
+
+{% if payables %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">#</th>
+          <th scope="col">Concepto</th>
+          <th scope="col">Empresa / Local</th>
+          <th scope="col">Acreedor</th>
+          <th scope="col">Vencía</th>
+          <th scope="col">Pagado el</th>
+          <th scope="col">Monto</th>
+          <th scope="col">Registrado por</th>
+          <th scope="col">Comprobante</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for payable in payables %}
+        <tr>
+          <td class="text-muted text-xs mono">{{ payable.pk }}</td>
+          <td>
+            <a href="{% url 'payment-payable-detail' payable.pk %}" id="hist-link-{{ payable.pk }}">
+              {{ payable.concept }}
+            </a>
+            {% if payable.external_document_number %}
+            <div class="text-xs text-muted mono">{{ payable.external_document_number }}</div>
+            {% endif %}
+          </td>
+          <td class="text-sm">
+            {{ payable.company.name }}{% if payable.branch %}<br><span class="text-muted text-xs">{{ payable.branch.name }}</span>{% endif %}
+          </td>
+          <td class="text-sm">{{ payable.creditor.name }}</td>
+          <td class="text-sm">{{ payable.due_date|date:"d/m/Y" }}</td>
+          <td class="text-sm fw-600">
+            {% if payable.payment %}{{ payable.payment.paid_on|date:"d/m/Y" }}{% else %}—{% endif %}
+          </td>
+          <td class="fw-600">
+            {% if payable.payment %}S/ {{ payable.payment.amount|floatformat:2|intcomma }}{% elif payable.amount %}S/ {{ payable.amount|floatformat:2|intcomma }}{% else %}—{% endif %}
+          </td>
+          <td class="text-sm text-muted">
+            {% if payable.payment %}{{ payable.payment.registered_by.get_short_name|default:payable.payment.registered_by.username }}{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if payable.payment and payable.payment.receipt %}
+            <a href="{% url 'payment-attachment-download' payable.payment.receipt.pk %}" class="btn btn-secondary btn-sm" id="hist-download-{{ payable.pk }}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Descargar
+            </a>
+            {% else %}
+            <span class="text-muted text-xs">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<div class="card">
+  <div class="empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+    <p class="empty-state-title">Sin pagos registrados</p>
+    <p class="empty-state-desc">Los pagos completados con comprobante aparecerán aquí.</p>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

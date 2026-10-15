@@ -1,0 +1,65 @@
+{% extends "payments/base.html" %}
+
+{% block title %}Editar cuenta de destino{% endblock %}
+
+{% block content %}
+
+<nav class="flex items-center gap-2 text-sm text-muted mb-4" aria-label="Ruta de navegación">
+  <a href="{% url 'payment-destination-accounts' %}">Cuentas de destino</a>
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+  <span aria-current="page">Editar</span>
+</nav>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Actualizar cuenta autorizada</h1>
+    <p class="page-subtitle">{{ account.creditor.name }} · {{ account.bank_name }}</p>
+  </div>
+</div>
+
+<div class="card card-padded" style="max-width:520px">
+  <form method="post" id="form-editar-cuenta">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <ul class="errorlist non-field-errors" role="alert">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <div class="form-grid" style="grid-template-columns:1fr">
+      <div class="form-field">
+        <label for="{{ form.creditor.id_for_label }}" class="form-label">Acreedor <span class="text-danger">*</span></label>
+        {{ form.creditor }}
+        {% if form.creditor.errors %}<ul class="errorlist">{% for e in form.creditor.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="form-field">
+        <label for="{{ form.bank_name.id_for_label }}" class="form-label">Banco <span class="text-danger">*</span></label>
+        {{ form.bank_name }}
+        {% if form.bank_name.errors %}<ul class="errorlist">{% for e in form.bank_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="form-field">
+        <label for="{{ form.account_holder.id_for_label }}" class="form-label">Titular <span class="text-danger">*</span></label>
+        {{ form.account_holder }}
+        {% if form.account_holder.errors %}<ul class="errorlist">{% for e in form.account_holder.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="form-field">
+        <label for="{{ form.account_number.id_for_label }}" class="form-label">Número de cuenta <span class="text-danger">*</span></label>
+        {{ form.account_number }}
+        {% if form.account_number.errors %}<ul class="errorlist">{% for e in form.account_number.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="checkbox-row">
+        {{ form.is_active }}
+        <label for="{{ form.is_active.id_for_label }}" class="checkbox-label">Cuenta activa</label>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" id="btn-actualizar-cuenta">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+        Actualizar cuenta
+      </button>
+      <a href="{% url 'payment-destination-accounts' %}" class="btn btn-secondary" id="btn-cancelar-edicion">Cancelar</a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

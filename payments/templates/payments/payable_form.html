@@ -1,0 +1,214 @@
+{% extends "payments/base.html" %}
+
+{% block title %}Registrar obligación{% endblock %}
+
+{% block content %}
+
+<!-- Breadcrumb -->
+<nav class="flex items-center gap-2 text-sm text-muted mb-4" aria-label="Ruta de navegación">
+  <a href="{% url 'payments-board' %}" class="flex items-center gap-1">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Tablero
+  </a>
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+  <span aria-current="page">Registrar obligación</span>
+</nav>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Registrar obligación</h1>
+    <p class="page-subtitle">
+      {% if selected_commitment %}A partir del compromiso «{{ selected_commitment.name }}»{% else %}Registra un gasto puntual sin perder la trazabilidad de empresa, local y proveedor.{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if not selected_commitment %}
+<aside class="context-note" aria-label="Ayuda para el registro rápido">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v5M12 7h.01"/></svg>
+  <span><strong>Registro rápido:</strong> identifica el gasto, a quién corresponde, el acreedor y su vencimiento. Si aún no conoces el monto o no tienes el documento, señálalo como información incompleta.</span>
+</aside>
+{% endif %}
+
+{% if selected_commitment %}
+<!-- Contexto del compromiso origen -->
+<div class="card card-padded" style="margin-bottom:20px;background:rgba(0,113,227,0.04);border-color:rgba(0,113,227,0.18)">
+  <div class="flex items-center gap-3">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-accent);flex-shrink:0" aria-hidden="true"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+    <div>
+      <div class="fw-600">{{ selected_commitment.name }}</div>
+      <div class="text-sm text-muted">
+        {{ selected_commitment.company.name }}{% if selected_commitment.branch %} · {{ selected_commitment.branch.name }}{% endif %} &nbsp;·&nbsp; {{ selected_commitment.get_frequency_display }}
+        {% if selected_commitment.fixed_amount %} &nbsp;·&nbsp; S/ {{ selected_commitment.fixed_amount|floatformat:2 }}{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card card-padded">
+  <form method="post" id="form-nueva-obligacion">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <ul class="errorlist non-field-errors" role="alert">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <div class="form-grid">
+
+      <!-- Compromiso -->
+      <div class="form-field">
+        <label for="{{ form.commitment.id_for_label }}" class="form-label">Compromiso (opcional)</label>
+        {{ form.commitment }}
+        {% if form.commitment.errors %}<ul class="errorlist">{% for e in form.commitment.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <p class="help-text">Si la obligación deriva de un compromiso, selecciónelo para vincular el historial.</p>
+      </div>
+
+      <!-- Concepto -->
+      <div class="form-field">
+        <label for="{{ form.concept.id_for_label }}" class="form-label">Concepto <span class="text-danger">*</span></label>
+        {{ form.concept }}
+        {% if form.concept.errors %}<ul class="errorlist">{% for e in form.concept.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- N° documento externo -->
+      <div class="form-field">
+        <label for="{{ form.external_document_number.id_for_label }}" class="form-label">N° documento externo</label>
+        {{ form.external_document_number }}
+        <p class="help-text">Factura, recibo u otro identificador (opcional).</p>
+      </div>
+
+      <!-- Categoría -->
+      <div class="form-field">
+        <label for="{{ form.category.id_for_label }}" class="form-label">Categoría <span class="text-danger">*</span></label>
+        {{ form.category }}
+        {% if form.category.errors %}<ul class="errorlist">{% for e in form.category.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- Empresa -->
+      <div class="form-field">
+        <label for="{{ form.company.id_for_label }}" class="form-label">Empresa <span class="text-danger">*</span></label>
+        {{ form.company }}
+        {% if form.company.errors %}<ul class="errorlist">{% for e in form.company.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- Local -->
+      <div class="form-field">
+        <label for="{{ form.branch.id_for_label }}" class="form-label">Local (opcional)</label>
+        {{ form.branch }}
+        {% if form.branch.errors %}<ul class="errorlist">{% for e in form.branch.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <!-- Acreedor -->
+      <div class="form-field">
+        <div class="flex items-center justify-between mb-1" style="display:flex;justify-content:space-between;align-items:center;">
+          <label for="{{ form.creditor.id_for_label }}" class="form-label" style="margin-bottom:0">Acreedor <span class="text-danger">*</span></label>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-toggle-creditor" style="font-size:12px;padding:2px 8px;color:var(--c-accent,#0071e3);cursor:pointer;background:none;border:none;">+ Registrar nuevo acreedor</button>
+        </div>
+        <div id="box-existing-creditor">
+          {{ form.creditor }}
+          {% if form.creditor.errors %}<ul class="errorlist">{% for e in form.creditor.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+        <div id="box-new-creditor" style="display:none;background:rgba(0,113,227,0.04);border:1px solid rgba(0,113,227,0.18);border-radius:10px;padding:12px;margin-top:6px;">
+          <div style="margin-bottom:8px;">
+            <label for="{{ form.new_creditor_name.id_for_label }}" class="form-label" style="font-size:12px;font-weight:600;">Nombre del nuevo acreedor <span class="text-danger">*</span></label>
+            {{ form.new_creditor_name }}
+            {% if form.new_creditor_name.errors %}<ul class="errorlist">{% for e in form.new_creditor_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          <div>
+            <label for="{{ form.new_creditor_tax_id.id_for_label }}" class="form-label" style="font-size:12px;">RUC / Identificador fiscal (opcional)</label>
+            {{ form.new_creditor_tax_id }}
+            {% if form.new_creditor_tax_id.errors %}<ul class="errorlist">{% for e in form.new_creditor_tax_id.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          <button type="button" id="btn-cancel-new-creditor" style="margin-top:8px;font-size:12px;background:none;border:none;color:var(--c-muted,#6e6e73);cursor:pointer;text-decoration:underline;">← Usar acreedor existente</button>
+        </div>
+      </div>
+
+      <!-- Código de suministro / cliente -->
+      <div class="form-field">
+        <label for="{{ form.supply_code.id_for_label }}" class="form-label">Código de suministro / Contrato</label>
+        {{ form.supply_code }}
+        {% if form.supply_code.errors %}<ul class="errorlist">{% for e in form.supply_code.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <p class="help-text">Código fijo para pagar en el banco o agentes (Luz, Agua, Gas, Internet, Arbitrios, etc.).</p>
+      </div>
+
+      <!-- Período -->
+      <div class="form-field">
+        <label for="{{ form.period.id_for_label }}" class="form-label">Período</label>
+        {{ form.period }}
+        <p class="help-text">Primer día del mes al que corresponde (opcional).</p>
+      </div>
+
+      <!-- Monto -->
+      <div class="form-field">
+        <label for="{{ form.amount.id_for_label }}" class="form-label">Monto (S/)</label>
+        {{ form.amount }}
+        {% if form.amount.errors %}<ul class="errorlist">{% for e in form.amount.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <p class="help-text">Déjelo vacío si el monto aún no está definido.</p>
+      </div>
+
+      <!-- Vencimiento -->
+      <div class="form-field">
+        <label for="{{ form.due_date.id_for_label }}" class="form-label">Fecha de vencimiento <span class="text-danger">*</span></label>
+        {{ form.due_date }}
+        {% if form.due_date.errors %}<ul class="errorlist">{% for e in form.due_date.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+    </div>
+
+    <!-- Incompleto checkbox -->
+    <div class="checkbox-row mt-2">
+      {{ form.is_incomplete }}
+      <label for="{{ form.is_incomplete.id_for_label }}" class="checkbox-label">
+        {{ form.is_incomplete.label }}
+        <span class="text-muted text-xs">— {{ form.is_incomplete.help_text }}</span>
+      </label>
+    </div>
+    {% if form.is_incomplete.errors %}<ul class="errorlist">{% for e in form.is_incomplete.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" id="btn-crear-obligacion">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+        Guardar y continuar
+      </button>
+      <a href="{% url 'payments-board' %}" class="btn btn-secondary" id="btn-cancelar-obligacion">Cancelar</a>
+    </div>
+  </form>
+</div>
+
+<script>
+(function() {
+  var toggleBtn = document.getElementById('btn-toggle-creditor');
+  var cancelBtn = document.getElementById('btn-cancel-new-creditor');
+  var boxExisting = document.getElementById('box-existing-creditor');
+  var boxNew = document.getElementById('box-new-creditor');
+  var creditorSelect = document.getElementById('{{ form.creditor.id_for_label }}');
+  var newCreditorInput = document.getElementById('{{ form.new_creditor_name.id_for_label }}');
+
+  if (toggleBtn && boxExisting && boxNew) {
+    toggleBtn.addEventListener('click', function() {
+      boxExisting.style.display = 'none';
+      boxNew.style.display = 'block';
+      toggleBtn.style.display = 'none';
+      if (creditorSelect) creditorSelect.value = '';
+      if (newCreditorInput) newCreditorInput.focus();
+    });
+  }
+
+  if (cancelBtn && boxExisting && boxNew) {
+    cancelBtn.addEventListener('click', function() {
+      boxNew.style.display = 'none';
+      boxExisting.style.display = 'block';
+      if (toggleBtn) toggleBtn.style.display = 'inline-block';
+      if (newCreditorInput) newCreditorInput.value = '';
+    });
+  }
+
+  // If there were validation errors on new_creditor_name, show the new creditor box automatically
+  {% if form.new_creditor_name.value %}
+  if (toggleBtn) toggleBtn.click();
+  {% endif %}
+})();
+</script>
+
+{% endblock %}

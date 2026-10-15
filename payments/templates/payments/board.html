@@ -1,0 +1,168 @@
+{% extends "payments/base.html" %}
+{% load humanize %}
+
+{% block title %}{% if user.role.code == 'GERENTE' %}Cola operativa{% else %}Mi cola de trabajo{% endif %}{% endblock %}
+
+{% block content %}
+{% if user.role.code == 'ASISTENTE' %}
+<section class="role-hero" aria-labelledby="assistant-title">
+  <div>
+    <span class="role-eyebrow">Asistente administrativo</span>
+    <h1 id="assistant-title">Resuelve lo importante, en el orden correcto.</h1>
+    <p>Esta es tu cola de trabajo: prioriza vencimientos, completa datos y registra cada pago con su comprobante.</p>
+  </div>
+  <div class="hero-actions">
+    <a href="{% url 'payment-payable-create' %}" class="btn btn-primary" id="btn-nueva-obligacion">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      Registrar gasto
+    </a>
+    <a href="{% url 'payment-commitment-create' %}" class="btn btn-secondary" id="btn-nuevo-compromiso-hero">Crear compromiso</a>
+  </div>
+</section>
+{% else %}
+<section class="role-hero role-hero--manager" aria-labelledby="operations-title">
+  <div>
+    <span class="role-eyebrow">Vista operativa</span>
+    <h1 id="operations-title">Obligaciones que el equipo debe resolver.</h1>
+    <p>Consulta el trabajo pendiente y entra al control gerencial para revisar liquidez, vencidos y excepciones.</p>
+  </div>
+  <div class="hero-actions">
+    <a href="{% url 'payment-manager-dashboard' %}" class="btn btn-primary">Ver control gerencial</a>
+    <a href="{% url 'payment-payable-create' %}" class="btn btn-secondary">Registrar obligación</a>
+  </div>
+</section>
+{% endif %}
+
+<section class="focus-grid" aria-label="Prioridades de la cola">
+  <a class="focus-card focus-card--danger" href="{% url 'payments-board' %}?state=OVERDUE" id="filter-overdue">
+    <span class="focus-card__label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Vencidas</span>
+    <strong class="focus-card__value">{{ counts.OVERDUE|default:0 }}</strong>
+    <span class="focus-card__hint">Requieren atención inmediata.</span>
+  </a>
+  <a class="focus-card focus-card--warning" href="{% url 'payments-board' %}?state=DUE_TODAY" id="filter-today">
+    <span class="focus-card__label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5M9 3v3M15 3v3"/></svg>Vencen hoy</span>
+    <strong class="focus-card__value">{{ counts.DUE_TODAY|default:0 }}</strong>
+    <span class="focus-card__hint">No las dejes salir del día.</span>
+  </a>
+  <a class="focus-card" href="{% url 'payments-board' %}?state=DUE_SOON" id="filter-soon">
+    <span class="focus-card__label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0A9 9 0 0 0 3 12Z"/><path d="m12 8 3 3-3 3"/></svg>Próximas</span>
+    <strong class="focus-card__value">{{ counts.DUE_SOON|default:0 }}</strong>
+    <span class="focus-card__hint">Vencen dentro de {{ alert_days }} días.</span>
+  </a>
+  <a class="focus-card focus-card--success" href="#cola-principal" id="filter-ready">
+    <span class="focus-card__label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Listas para pagar</span>
+    <strong class="focus-card__value">{{ work_summary.ready_to_pay }}</strong>
+    <span class="focus-card__hint">Con monto definido y sin datos críticos pendientes.</span>
+  </a>
+</section>
+
+{% if work_summary.incomplete or work_summary.without_source_document %}
+<aside class="context-note" aria-label="Recordatorio operativo">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v5M12 7h.01"/></svg>
+  <span>
+    {% if work_summary.incomplete %}<strong>{{ work_summary.incomplete }}</strong> obligación{{ work_summary.incomplete|pluralize:"es" }} necesita{{ work_summary.incomplete|pluralize:"n" }} completar información.{% endif %}
+    {% if work_summary.incomplete and work_summary.without_source_document %} {% endif %}
+    {% if work_summary.without_source_document %}<strong>{{ work_summary.without_source_document }}</strong> no tiene{{ work_summary.without_source_document|pluralize:"n" }} documento de sustento adjunto; agrégalo cuando esté disponible.{% endif %}
+  </span>
+</aside>
+{% endif %}
+
+<form method="get" class="filter-bar" role="search" aria-label="Filtros de la cola de trabajo">
+  <label for="{{ filter_form.company.id_for_label }}">Empresa</label>
+  {{ filter_form.company }}
+  <label for="{{ filter_form.branch.id_for_label }}">Local</label>
+  {{ filter_form.branch }}
+  <label for="{{ filter_form.state.id_for_label }}">Estado</label>
+  {{ filter_form.state }}
+  <button type="submit" class="btn btn-secondary btn-sm" id="btn-filtrar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+    Aplicar filtros
+  </button>
+  {% if request.GET %}<a href="{% url 'payments-board' %}" class="btn btn-secondary btn-sm" id="btn-limpiar-filtro">Limpiar</a>{% endif %}
+</form>
+
+<div class="board-heading" id="cola-principal">
+  <div>
+    <h2>{% if user.role.code == 'ASISTENTE' %}Tu lista priorizada{% else %}Cola priorizada{% endif %}</h2>
+    <p>Las obligaciones pagadas y suspendidas se conservan en el historial, para no distraer la operación diaria.</p>
+  </div>
+  <span class="board-count">{{ payables|length }} pendiente{{ payables|length|pluralize:"s" }}</span>
+</div>
+
+{% if payables %}
+<div class="board-grid" role="list" aria-label="Obligaciones pendientes ordenadas por prioridad">
+  {% for payable in payables %}
+  {% with vs=payable.visual_status %}
+  <a href="{% url 'payment-payable-detail' payable.pk %}" class="payable-card {{ vs }}" role="listitem" aria-label="Abrir obligación: {{ payable.concept }}" id="payable-card-{{ payable.pk }}">
+    <div class="card-top">
+      <div class="card-concept">{{ payable.concept }}</div>
+      <div class="card-amount">{% if payable.amount %}S/ {{ payable.amount|floatformat:2|intcomma }}{% else %}<span class="text-muted">Monto pendiente</span>{% endif %}</div>
+    </div>
+    <div class="card-meta">
+      <span class="cat-badge cat-{{ payable.category }}">{{ payable.get_category_display }}</span>
+      {% if payable.is_incomplete %}<span class="status-badge s-incomplete">Datos incompletos</span>{% endif %}
+      {% if payable.external_document_number %}<span class="task-indicator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>{{ payable.external_document_number }}</span>{% endif %}
+    </div>
+    <div class="card-org">{{ payable.company.name }}{% if payable.branch %} · {{ payable.branch.name }}{% endif %} · {{ payable.creditor.name }}</div>
+    <div class="card-bottom">
+      <span class="status-badge {% if vs == 'OVERDUE' %}s-overdue{% elif vs == 'DUE_TODAY' %}s-today{% elif vs == 'DUE_SOON' %}s-soon{% else %}s-pending{% endif %}">
+        {% if vs == 'OVERDUE' %}Vencida{% elif vs == 'DUE_TODAY' %}Vence hoy{% elif vs == 'DUE_SOON' %}Próxima{% else %}Pendiente{% endif %}
+      </span>
+      <span class="card-due">Vence {{ payable.due_date|date:"d/m/Y" }}</span>
+    </div>
+    <div class="task-indicators" aria-label="Documentos disponibles">
+      {% for att in payable.attachments.all %}
+        {% if att.kind == 'SOURCE' %}<span class="task-indicator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Documento adjunto</span>{% endif %}
+      {% empty %}<span class="task-indicator">Sin documento adjunto</span>
+      {% endfor %}
+    </div>
+    <div class="task-next">
+      <span>{% if payable.is_incomplete or not payable.amount %}Completa el monto o la información faltante.{% elif vs == 'OVERDUE' %}Registra el pago y adjunta el comprobante.{% elif vs == 'DUE_TODAY' %}Confirma la ejecución del pago hoy.{% else %}Revisa el detalle y prepara el pago.{% endif %}</span>
+      <strong>Resolver →</strong>
+    </div>
+  </a>
+  {% endwith %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <div class="empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+    <p class="empty-state-title">No hay obligaciones pendientes con estos filtros</p>
+    <p class="empty-state-desc">Puedes registrar un gasto puntual o crear un compromiso recurrente cuando corresponda.</p>
+    <a href="{% url 'payment-payable-create' %}" class="btn btn-primary">Registrar obligación</a>
+  </div>
+</div>
+{% endif %}
+
+{% if user.role.code == 'GERENTE' and commitments %}
+<section class="mt-6" aria-labelledby="commitments-title">
+  <div class="board-heading">
+    <div><h2 id="commitments-title">Compromisos recurrentes</h2><p>Genera solo las obligaciones del período que todavía no existen.</p></div>
+    <a href="{% url 'payment-commitment-create' %}" class="btn btn-secondary btn-sm">Nuevo compromiso</a>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <div style="padding:16px 20px">
+      <form method="post" action="{% url 'payment-monthly-generation' %}" class="flex items-center gap-3 flex-wrap" id="form-generar-mes">
+        {% csrf_token %}
+        <label for="{{ generation_form.period.id_for_label }}" class="form-label">Mes a generar</label>
+        {{ generation_form.period }}
+        <button type="submit" class="btn btn-primary btn-sm" id="btn-generar-mes">Generar obligaciones</button>
+      </form>
+    </div>
+  </div>
+  <div class="card">
+    {% for c in commitments %}
+    <div class="commitment-row {% if not c.is_active %}inactive{% endif %}">
+      <div class="commitment-info"><div class="commitment-name">{{ c.name }}</div><div class="commitment-sub">{{ c.company.name }}{% if c.branch %} · {{ c.branch.name }}{% endif %} · {{ c.get_frequency_display }}</div></div>
+      <div class="flex items-center gap-2">
+        <span class="status-badge {% if c.is_active %}s-paid{% else %}s-suspended{% endif %}">{% if c.is_active %}Activo{% else %}Inactivo{% endif %}</span>
+        <a href="{% url 'payment-payable-create' %}?commitment={{ c.pk }}" class="btn btn-secondary btn-sm">Crear obligación</a>
+        <form method="post" action="{% url 'payment-commitment-toggle' c.pk %}">{% csrf_token %}<input type="hidden" name="activate" value="{% if c.is_active %}0{% else %}1{% endif %}"><button type="submit" class="btn btn-secondary btn-sm">{% if c.is_active %}Desactivar{% else %}Activar{% endif %}</button></form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

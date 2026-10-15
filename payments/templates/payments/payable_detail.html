@@ -1,0 +1,318 @@
+{% extends "payments/base.html" %}
+
+{% block title %}Detalle — {{ payable.concept }}{% endblock %}
+
+{% block content %}
+
+<!-- Breadcrumb -->
+<nav class="flex items-center gap-2 text-sm text-muted mb-4" aria-label="Ruta de navegación">
+  <a href="{% url 'payments-board' %}" class="flex items-center gap-1">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Tablero
+  </a>
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+  <span aria-current="page">{{ payable.concept|truncatechars:40 }}</span>
+</nav>
+
+<!-- Page Header -->
+<div class="page-header">
+  <div>
+    <div class="flex items-center gap-3 mb-1">
+      {% with vs=payable.visual_status %}
+      <span class="status-badge
+        {% if vs == 'OVERDUE' %}s-overdue
+        {% elif vs == 'DUE_TODAY' %}s-today
+        {% elif vs == 'DUE_SOON' %}s-soon
+        {% elif vs == 'PAID' %}s-paid
+        {% elif vs == 'SUSPENDED' %}s-suspended
+        {% else %}s-pending{% endif %}" aria-label="Estado visual">
+        {% if vs == 'OVERDUE' %}Vencido
+        {% elif vs == 'DUE_TODAY' %}Vence hoy
+        {% elif vs == 'DUE_SOON' %}Próximo a vencer
+        {% elif vs == 'PAID' %}Pagado
+        {% elif vs == 'SUSPENDED' %}Suspendido
+        {% else %}Pendiente{% endif %}
+      </span>
+      {% endwith %}
+      {% if payable.is_incomplete %}
+      <span class="status-badge s-incomplete">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="10" height="10" aria-hidden="true"><path d="M12 9v4M12 17h.01"/></svg>
+        Información incompleta
+      </span>
+      {% endif %}
+      <span class="cat-badge cat-{{ payable.category }}">{{ payable.get_category_display }}</span>
+    </div>
+    <h1 class="page-title">{{ payable.concept }}</h1>
+    <p class="page-subtitle">{{ payable.company.name }}{% if payable.branch %} · {{ payable.branch.name }}{% endif %} · {{ payable.creditor.name }}</p>
+  </div>
+  <div class="page-actions">
+    <a href="{% url 'payments-board' %}" class="btn btn-secondary" id="btn-volver-tablero">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Tablero
+    </a>
+  </div>
+</div>
+
+<aside class="context-note" aria-label="Siguiente paso recomendado">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v5M12 7h.01"/></svg>
+  <span>
+    {% if payable.status == 'PAID' %}<strong>Pago completado:</strong> el comprobante y la trazabilidad quedan disponibles en esta ficha.
+    {% elif payable.status == 'SUSPENDED' %}<strong>Obligación suspendida:</strong> el gerente puede reactivarla cuando vuelva a ser exigible.
+    {% elif payable.is_incomplete or not payable.amount %}<strong>Siguiente paso:</strong> completa el monto o el dato pendiente antes de confirmar el pago.
+    {% else %}<strong>Siguiente paso:</strong> adjunta el sustento cuando esté disponible y, al ejecutar el pago, registra obligatoriamente su comprobante.
+    {% endif %}
+  </span>
+</aside>
+
+<!-- Main Detail Grid -->
+<div class="detail-grid">
+
+  <!-- ── Left column: Info + Actions ─────────────────── -->
+  <div class="flex-col gap-4" style="display:flex;flex-direction:column;gap:16px">
+
+    <!-- Datos principales -->
+    <div class="card card-padded">
+      <h2 class="section-heading">Datos de la obligación</h2>
+      <dl class="dl-grid">
+        <dt class="dl-label">Monto</dt>
+        <dd class="dl-value fw-700">
+          {% if payable.amount %}S/ {{ payable.amount|floatformat:2 }}{% else %}<span class="text-muted">Por definir</span>{% endif %}
+        </dd>
+
+        <dt class="dl-label">Vencimiento</dt>
+        <dd class="dl-value">{{ payable.due_date|date:"d/m/Y" }}</dd>
+
+        <dt class="dl-label">Período</dt>
+        <dd class="dl-value">{{ payable.period|date:"m/Y"|default:"—" }}</dd>
+
+        {% if payable.external_document_number %}
+        <dt class="dl-label">N° documento</dt>
+        <dd class="dl-value mono">{{ payable.external_document_number }}</dd>
+        {% endif %}
+
+        {% if payable.supply_code %}
+        <dt class="dl-label">Suministro / Cliente</dt>
+        <dd class="dl-value mono flex items-center gap-2" style="display:flex;align-items:center;gap:8px;">
+          <strong style="color:var(--c-accent,#0071e3);">{{ payable.supply_code }}</strong>
+          <button type="button" class="btn btn-sm btn-secondary" data-copy-value="{{ payable.supply_code }}" style="font-size:11px;padding:2px 8px;">Copiar código</button>
+        </dd>
+        {% endif %}
+
+        <dt class="dl-label">Acreedor</dt>
+        <dd class="dl-value">{{ payable.creditor.name }}</dd>
+
+        {% if payable.destination_account %}
+        <dt class="dl-label">Cuenta destino</dt>
+        <dd class="dl-value mono">{{ payable.destination_account.bank_name }} · {{ payable.destination_account.account_number }}</dd>
+        {% endif %}
+
+        <dt class="dl-label">Estado</dt>
+        <dd class="dl-value">{{ payable.get_status_display }}</dd>
+
+        <dt class="dl-label">Creado por</dt>
+        <dd class="dl-value">{{ payable.created_by.get_full_name|default:payable.created_by.username }}</dd>
+
+        <dt class="dl-label">Creado el</dt>
+        <dd class="dl-value">{{ payable.created_at|date:"d/m/Y H:i" }}</dd>
+      </dl>
+    </div>
+
+    <!-- Pago registrado (si ya está pagado) -->
+    {% if payable.status == 'PAID' and payable.payment %}
+    <div class="card card-padded" style="border-color: rgba(48,209,88,0.3); background: rgba(48,209,88,0.05);">
+      <h2 class="section-heading">Pago registrado</h2>
+      <dl class="dl-grid">
+        <dt class="dl-label">Monto pagado</dt>
+        <dd class="dl-value fw-700 text-success">S/ {{ payable.payment.amount|floatformat:2 }}</dd>
+
+        <dt class="dl-label">Fecha de pago</dt>
+        <dd class="dl-value">{{ payable.payment.paid_on|date:"d/m/Y" }}</dd>
+
+        {% if payable.payment.operation_reference %}
+        <dt class="dl-label">Referencia</dt>
+        <dd class="dl-value mono">{{ payable.payment.operation_reference }}</dd>
+        {% endif %}
+
+        <dt class="dl-label">Registrado por</dt>
+        <dd class="dl-value">{{ payable.payment.registered_by.get_full_name|default:payable.payment.registered_by.username }}</dd>
+
+        {% if payable.payment.receipt %}
+        <dt class="dl-label">Comprobante</dt>
+        <dd class="dl-value">
+          <a href="{% url 'payment-attachment-download' payable.payment.receipt.pk %}" class="btn btn-secondary btn-sm" id="btn-descargar-comprobante">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            {{ payable.payment.receipt.original_name }}
+          </a>
+        </dd>
+        {% endif %}
+      </dl>
+    </div>
+    {% endif %}
+
+    <!-- Documentos adjuntos -->
+    {% with sources=payable.attachments.all %}
+    {% if sources %}
+    <div class="card card-padded">
+      <h2 class="section-heading">Documentos adjuntos</h2>
+      {% for att in sources %}
+      <div class="flex items-center gap-3" style="padding:8px 0;border-bottom:1px solid var(--c-border)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-accent);flex-shrink:0" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <div style="flex:1;min-width:0">
+          <div class="fw-600 text-sm truncate">{{ att.original_name }}</div>
+          <div class="text-xs text-muted">{{ att.get_kind_display }} · {{ att.created_at|date:"d/m/Y H:i" }}</div>
+        </div>
+        <a href="{% url 'payment-attachment-download' att.pk %}" class="btn btn-secondary btn-sm" id="btn-descargar-att-{{ att.pk }}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Descargar
+        </a>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+  </div>
+
+  <!-- ── Right column: Action panels ─────────────────── -->
+  <div style="display:flex;flex-direction:column;gap:16px">
+
+    <!-- 1. Adjuntar documento por pagar -->
+    {% if payable.status == 'PENDING' %}
+    <div class="card card-padded">
+      <h2 class="section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Documento por pagar
+      </h2>
+      <form method="post" action="{% url 'payment-source-document' payable.pk %}" enctype="multipart/form-data" id="form-doc-pagar">
+        {% csrf_token %}
+        <div class="form-field">
+          <label for="{{ source_form.document.id_for_label }}" class="form-label">Adjuntar archivo</label>
+          {{ source_form.document }}
+          {% if source_form.document.errors %}
+          <ul class="errorlist" role="alert">{% for e in source_form.document.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+          {% endif %}
+          <p class="help-text">PDF, JPG o PNG — máx. 10 MB</p>
+        </div>
+        <div class="form-actions" style="border:none;padding:0;margin-top:12px">
+          <button type="submit" class="btn btn-secondary" id="btn-adjuntar-doc">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            Adjuntar
+          </button>
+        </div>
+      </form>
+    </div>
+    {% endif %}
+
+    <!-- 2. Registrar pago -->
+    {% if payable.status == 'PENDING' %}
+    <div class="card card-padded" style="border-color:rgba(0,113,227,0.2);background:rgba(0,113,227,0.03)">
+      <h2 class="section-heading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px;color:var(--c-accent)" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        Registrar pago
+      </h2>
+      <form method="post" action="{% url 'payment-record' payable.pk %}" enctype="multipart/form-data" id="form-registrar-pago">
+        {% csrf_token %}
+        <div class="flex-col gap-3" style="display:flex;flex-direction:column;gap:10px">
+          <div class="form-field">
+            <label for="{{ payment_form.amount.id_for_label }}" class="form-label">Monto pagado (S/)</label>
+            {{ payment_form.amount }}
+            {% if payment_form.amount.errors %}<ul class="errorlist" role="alert">{% for e in payment_form.amount.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ payment_form.paid_on.id_for_label }}" class="form-label">Fecha de pago</label>
+            {{ payment_form.paid_on }}
+            {% if payment_form.paid_on.errors %}<ul class="errorlist" role="alert">{% for e in payment_form.paid_on.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ payment_form.operation_reference.id_for_label }}" class="form-label">Referencia de operación</label>
+            {{ payment_form.operation_reference }}
+          </div>
+          <div class="form-field">
+            <label for="{{ payment_form.receipt.id_for_label }}" class="form-label">
+              Comprobante de pago <span class="text-danger fw-700">*</span>
+            </label>
+            {{ payment_form.receipt }}
+            {% if payment_form.receipt.errors %}<ul class="errorlist" role="alert">{% for e in payment_form.receipt.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+            <p class="help-text">Obligatorio · PDF, JPG o PNG — máx. 10 MB</p>
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <button type="submit" class="btn btn-primary" style="width:100%" id="btn-confirmar-pago">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+            Confirmar pago
+          </button>
+        </div>
+      </form>
+    </div>
+    {% endif %}
+
+    <!-- 3. Suspender / Reactivar (solo gerente) -->
+    {% if user.role.code == 'GERENTE' %}
+    <div class="card card-padded">
+      <h2 class="section-heading">Control de excepción</h2>
+      <form method="post" action="{% url 'payment-suspension' payable.pk %}" id="form-suspension">
+        {% csrf_token %}
+        <div class="form-field">
+          <label for="{{ suspension_form.note.id_for_label }}" class="form-label">Motivo</label>
+          {{ suspension_form.note }}
+          {% if suspension_form.note.errors %}<ul class="errorlist" role="alert">{% for e in suspension_form.note.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+        <div style="margin-top:12px">
+          {% if payable.status == 'SUSPENDED' %}
+          <button type="submit" class="btn btn-success" id="btn-reactivar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Reactivar obligación
+          </button>
+          {% else %}
+          <button type="submit" class="btn btn-danger" id="btn-suspender">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            Suspender obligación
+          </button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+    {% endif %}
+
+    <!-- 4. Auditoría -->
+    {% if audit_logs %}
+    <div class="card card-padded">
+      <h2 class="section-heading">Historial de cambios</h2>
+      {% for log in audit_logs %}
+      <div class="audit-entry">
+        <div class="audit-dot"></div>
+        <div class="audit-text">
+          <span>{{ log.summary }}</span>
+          <span class="text-muted"> — {{ log.actor.get_short_name|default:log.actor.username }}</span>
+        </div>
+        <div class="audit-time">{{ log.created_at|date:"d/m H:i" }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<script>
+(function() {
+  document.querySelectorAll('[data-copy-value]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var val = btn.getAttribute('data-copy-value');
+      if (val && navigator.clipboard) {
+        navigator.clipboard.writeText(val).then(function() {
+          var orig = btn.textContent;
+          btn.textContent = '¡Copiado!';
+          btn.style.color = '#34c759';
+          setTimeout(function() {
+            btn.textContent = orig;
+            btn.style.color = '';
+          }, 1800);
+        });
+      }
+    });
+  });
+})();
+</script>
+
+{% endblock %}
