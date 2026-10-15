@@ -28,6 +28,7 @@ ALLOWED_HOSTS = [
 # en localhost, incluso si usan otro puerto.
 SESSION_COOKIE_NAME = "pagocontrol_session"
 CSRF_COOKIE_NAME = "pagocontrol_csrf"
+CSRF_FAILURE_VIEW = "identity.views.csrf_failure"
 
 INSTALLED_APPS = [
     "django.contrib.admin",

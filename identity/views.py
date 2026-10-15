@@ -9,6 +9,12 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from .models import Account, Role
 
 
+@never_cache
+def csrf_failure(request, reason=""):
+    return render(request, "identity/csrf_failure.html", status=403)
+
+
+@never_cache
 @require_http_methods(["GET", "POST"])
 def login_view(request):
     if request.user.is_authenticated:
@@ -54,12 +60,14 @@ def dashboard(request):
     return redirect("payments-board")
 
 
+@never_cache
 @require_http_methods(["GET", "POST"])
 def logout_view(request):
     logout(request)
     return redirect("login")
 
 
+@never_cache
 @login_required
 @require_GET
 def switch_role(request, role_code):

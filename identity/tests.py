@@ -14,6 +14,7 @@ class PublicRoutesTests(TestCase):
         response = self.client.get(reverse("login"))
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn("no-store", response["Cache-Control"])
 
     def test_login_accepts_a_fresh_csrf_token(self):
         csrf_client = Client(enforce_csrf_checks=True)
@@ -35,3 +36,10 @@ class PublicRoutesTests(TestCase):
         )
 
         self.assertNotEqual(response.status_code, 403)
+
+    def test_invalid_csrf_shows_a_recovery_page(self):
+        csrf_client = Client(enforce_csrf_checks=True)
+        response = csrf_client.post(reverse("login"), {"email": "inexistente@ejemplo.invalid"})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "Recarga la página", status_code=403)
