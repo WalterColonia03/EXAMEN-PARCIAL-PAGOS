@@ -62,4 +62,20 @@
   </form>
 </div>
 
+{% if audit_logs %}
+<section class="card card-padded" style="max-width:720px;margin-top:20px" aria-labelledby="audit-title">
+  <h2 class="section-heading" id="audit-title">Historial de cambios</h2>
+  {% for log in audit_logs %}
+  <div class="audit-entry">
+    <div class="audit-dot"></div>
+    <div class="audit-text">
+      <span>{{ log.summary }}</span>
+      <span class="text-muted"> — {{ log.actor.get_short_name|default:log.actor.username }}</span>
+    </div>
+    <div class="audit-time">{{ log.created_at|date:"d/m/Y H:i" }}</div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
 {% endblock %}

@@ -1,0 +1,41 @@
+{% extends "payments/base.html" %}
+
+{% block title %}Importar obligaciones{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h1 class="page-title">Importar obligaciones</h1><p class="page-subtitle">Revisa cada fila antes de crear registros. Un archivo con errores no crea nada.</p></div>
+  <div class="page-actions"><a class="btn btn-secondary" href="{% url 'payment-payable-import-template' %}">Descargar plantilla CSV</a></div>
+</div>
+
+<section class="card card-padded" aria-labelledby="upload-title">
+  <h2 class="section-heading" id="upload-title">1. Seleccionar y revisar archivo</h2>
+  <form method="post" enctype="multipart/form-data" class="mt-3" data-file-input-group data-prevent-double-submit>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<ul class="errorlist non-field-errors" role="alert">{% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+    <div class="form-field" data-spreadsheet-preview-url="{% url 'payment-payable-import-preview' %}"><label class="form-label" for="{{ form.workbook.id_for_label }}">{{ form.workbook.label }}</label>{{ form.workbook }}{% if form.workbook.help_text %}<p class="help-text">{{ form.workbook.help_text }}</p>{% endif %}{% if form.workbook.errors %}<ul class="errorlist">{% for error in form.workbook.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}</div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Ver contenido antes de importar</button></div>
+  </form>
+</section>
+
+{% if batch %}
+<section class="card card-padded mt-4" aria-labelledby="preview-title">
+  <div class="flex items-center justify-between gap-3 flex-wrap"><div><h2 class="section-heading" id="preview-title">2. Resultado de la revisión</h2><p class="text-sm text-muted">{{ batch.original_name }} · {{ batch.valid_count }} válida{{ batch.valid_count|pluralize:"s" }} · {{ batch.error_count }} con error · {{ batch.duplicate_count }} coincidencia{{ batch.duplicate_count|pluralize:"s" }}</p></div><span class="status-badge {% if batch.status == 'CONFIRMED' %}s-paid{% elif batch.error_count %}s-overdue{% else %}s-pending{% endif %}">{{ batch.get_status_display }}</span></div>
+  {% if batch.error_message %}<p class="context-note mt-3" role="alert">{{ batch.error_message }}</p>{% endif %}
+  <div class="table-wrap mt-3">
+    <table>
+      <thead><tr><th>Fila</th><th>Ámbito</th><th>Concepto</th><th>Acreedor</th><th>Monto</th><th>Vence</th><th>Revisión</th></tr></thead>
+      <tbody>{% for row in batch.rows %}<tr><td>{{ row.row_number }}</td><td>{{ row.context_name }}</td><td><strong>{{ row.concept }}</strong><div class="text-xs text-muted">{{ row.category_label|default:"Otra" }}</div></td><td>{{ row.creditor_name }}</td><td>{% if row.amount %}{{ row.currency }} {{ row.amount }}{% else %}<span class="text-muted">Por definir</span>{% endif %}</td><td>{{ row.due_date|default:"—" }}</td><td>{% if row.errors %}<ul class="errorlist">{% for error in row.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% elif row.duplicate_ids %}<span class="status-badge s-today">Posible duplicado</span><div class="text-xs text-muted">Coincide con: {{ row.duplicate_ids|join:", " }}</div>{% else %}<span class="status-badge s-paid">Lista</span>{% endif %}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {% if batch.status == 'PREVIEW' and not batch.error_count %}
+  <form method="post" action="{% url 'payment-payable-import-confirm' batch.pk %}" class="mt-4" data-prevent-double-submit>
+    {% csrf_token %}
+    {% if batch.duplicate_count %}<div class="checkbox-row"><input type="checkbox" id="id_confirm_duplicates" name="confirm_duplicates" value="1" required><label class="checkbox-label" for="id_confirm_duplicates">Revisé las coincidencias y confirmo que son obligaciones diferentes</label></div><div class="form-field mt-3"><label class="form-label" for="id_duplicate_reason">Motivo</label><textarea class="control" id="id_duplicate_reason" name="duplicate_reason" maxlength="280" rows="2" required></textarea></div>{% endif %}
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Confirmar {{ batch.valid_count }} obligaciones</button></div>
+  </form>
+  {% elif batch.error_count %}<p class="context-note mt-4">Corrige el archivo y vuelve a revisarlo. No se creó ninguna obligación.</p>{% endif %}
+</section>
+{% endif %}
+
+{% if batches %}<section class="card card-padded mt-4"><h2 class="section-heading">Revisiones recientes</h2><div class="attention-list mt-3">{% for item in batches %}<a class="attention-item" href="?batch={{ item.pk }}"><span class="attention-item__body"><span class="attention-item__title">{{ item.original_name }}</span><span class="attention-item__meta">{{ item.created_at|date:"d/m/Y H:i" }} · {{ item.get_status_display }}</span></span><span class="attention-item__arrow">→</span></a>{% endfor %}</div></section>{% endif %}
+{% endblock %}

@@ -24,12 +24,24 @@ from payments.models import (
     Payable,
     Payment,
     PaymentCommitment,
+    ServiceAccount,
 )
 
 
 DEMO_PASSWORD = "DemoPagos2026!"
 MANAGER_EMAIL = "gerente.demo@pagos.invalid"
 ASSISTANT_EMAIL = "asistente.demo@pagos.invalid"
+
+
+def destination_snapshot_defaults(account):
+    """Keep demo obligations consistent with the immutable payment instruction rule."""
+    return {
+        "destination_bank_name_snapshot": account.bank_name,
+        "destination_account_holder_snapshot": account.account_holder,
+        "destination_account_number_snapshot": account.account_number,
+        "destination_snapshot_origin": Payable.DestinationSnapshotOrigin.CREATED,
+        "destination_snapshot_captured_at": timezone.now(),
+    }
 
 
 def ensure_demo_account(*, email, legacy_email, password, display_name, role, is_staff=False):
@@ -197,6 +209,60 @@ def run():
         }
     )
 
+    # 5b. Cuentas de servicio permanentes (Etapa 1)
+    cuenta_luz, _ = ServiceAccount.objects.get_or_create(
+        company=empresa,
+        branch=local_central,
+        creditor=c_luz,
+        identifier_type=ServiceAccount.IdentifierType.SUPPLY,
+        primary_identifier="LD-2194810-8",
+        defaults={
+            "service_type": ServiceAccount.ServiceType.ELECTRICITY,
+            "account_holder": "Grupo Gastronómico & Retail S.A.C.",
+            "expected_billing_frequency": ServiceAccount.BillingFrequency.MONTHLY,
+            "usual_billing_day": 18,
+            "acquisition_channel": ServiceAccount.AcquisitionChannel.PORTAL,
+            "created_by": gerente,
+            "updated_by": gerente,
+        },
+    )
+    cuenta_agua, _ = ServiceAccount.objects.get_or_create(
+        company=empresa,
+        branch=local_miraflores,
+        creditor=c_agua,
+        identifier_type=ServiceAccount.IdentifierType.CLIENT,
+        primary_identifier="SED-0034567",
+        defaults={
+            "service_type": ServiceAccount.ServiceType.WATER,
+            "account_holder": "Grupo Gastronómico & Retail S.A.C.",
+            "expected_billing_frequency": ServiceAccount.BillingFrequency.MONTHLY,
+            "usual_billing_day": 22,
+            "acquisition_channel": ServiceAccount.AcquisitionChannel.EMAIL,
+            "created_by": gerente,
+            "updated_by": gerente,
+        },
+    )
+    cuenta_internet, _ = ServiceAccount.objects.get_or_create(
+        company=empresa,
+        branch=local_central,
+        creditor=c_tel,
+        identifier_type=ServiceAccount.IdentifierType.CONTRACT,
+        primary_identifier="MOV-FTTH-001",
+        defaults={
+            "service_type": ServiceAccount.ServiceType.INTERNET,
+            "account_holder": "Grupo Gastronómico & Retail S.A.C.",
+            "expected_billing_frequency": ServiceAccount.BillingFrequency.MONTHLY,
+            "usual_billing_day": 12,
+            "acquisition_channel": ServiceAccount.AcquisitionChannel.PORTAL,
+            "created_by": gerente,
+            "updated_by": gerente,
+        },
+    )
+    for compromiso, cuenta in ((compr_luz, cuenta_luz), (compr_agua, cuenta_agua), (compr_tel, cuenta_internet)):
+        if compromiso.service_account_id != cuenta.pk:
+            compromiso.service_account = cuenta
+            compromiso.save(update_fields=["service_account", "updated_at"])
+
     today = timezone.localdate()
 
     # 6. Tickers / Obligaciones concretas
@@ -212,10 +278,14 @@ def run():
             "amount": Decimal("1840.50"),
             "commitment": compr_luz,
             "destination_account": cta_luz,
+            **destination_snapshot_defaults(cta_luz),
             "created_by": asistente,
             "status": Payable.Status.PENDING,
         }
     )
+    if p_vencido.service_account_id != cuenta_luz.pk:
+        p_vencido.service_account = cuenta_luz
+        p_vencido.save(update_fields=["service_account", "updated_at"])
 
     # B) VENCE HOY (Due Today)
     p_hoy, _ = Payable.objects.get_or_create(
@@ -228,6 +298,7 @@ def run():
             "category": PaymentCommitment.Category.SUPPLIER,
             "amount": Decimal("3450.00"),
             "destination_account": cta_prov,
+            **destination_snapshot_defaults(cta_prov),
             "created_by": asistente,
             "status": Payable.Status.PENDING,
         }
@@ -245,10 +316,14 @@ def run():
             "amount": Decimal("685.20"),
             "commitment": compr_agua,
             "destination_account": cta_agua,
+            **destination_snapshot_defaults(cta_agua),
             "created_by": asistente,
             "status": Payable.Status.PENDING,
         }
     )
+    if p_proximo1.service_account_id != cuenta_agua.pk:
+        p_proximo1.service_account = cuenta_agua
+        p_proximo1.save(update_fields=["service_account", "updated_at"])
 
     # D) PRÓXIMO (Due Soon) - Vence en 4 días
     p_proximo2, _ = Payable.objects.get_or_create(
@@ -261,6 +336,7 @@ def run():
             "category": PaymentCommitment.Category.SUPPLIER,
             "amount": Decimal("1290.00"),
             "destination_account": cta_prov,
+            **destination_snapshot_defaults(cta_prov),
             "created_by": asistente,
             "status": Payable.Status.PENDING,
         }
@@ -277,6 +353,7 @@ def run():
             "category": PaymentCommitment.Category.TAX,
             "amount": Decimal("5820.00"),
             "destination_account": cta_sunat,
+            **destination_snapshot_defaults(cta_sunat),
             "created_by": asistente,
             "status": Payable.Status.PENDING,
         }
@@ -300,11 +377,48 @@ def run():
             amount=Decimal("450.00"),
             commitment=compr_tel,
             destination_account=cta_tel,
+            **destination_snapshot_defaults(cta_tel),
             created_by=asistente,
             status=Payable.Status.PAID,
         )
 
-    if not hasattr(p_pagado, "payment"):
+    if p_pagado.service_account_id != cuenta_internet.pk:
+        p_pagado.service_account = cuenta_internet
+        p_pagado.save(update_fields=["service_account", "updated_at"])
+
+    for payable in (p_vencido, p_hoy, p_proximo1, p_proximo2, p_futuro, p_pagado):
+        if payable.destination_account_id and not payable.has_destination_snapshot:
+            account = payable.destination_account
+            payable.destination_bank_name_snapshot = account.bank_name
+            payable.destination_account_holder_snapshot = account.account_holder
+            payable.destination_account_number_snapshot = account.account_number
+            payable.destination_snapshot_origin = Payable.DestinationSnapshotOrigin.BACKFILLED
+            payable.destination_snapshot_captured_at = timezone.now()
+            payable.save(
+                update_fields=[
+                    "destination_bank_name_snapshot",
+                    "destination_account_holder_snapshot",
+                    "destination_account_number_snapshot",
+                    "destination_snapshot_origin",
+                    "destination_snapshot_captured_at",
+                    "updated_at",
+                ]
+            )
+
+    if not p_pagado.attachments.filter(kind=Attachment.Kind.SOURCE).exists():
+        source_content = b"%PDF-1.4\nDocumento de sustento de servicio\n%%EOF"
+        source_file = ContentFile(source_content, name="sustento_internet_450.pdf")
+        Attachment.objects.create(
+            payable=p_pagado,
+            kind=Attachment.Kind.SOURCE,
+            file=source_file,
+            original_name="sustento_internet_450.pdf",
+            content_type="application/pdf",
+            size_bytes=len(source_content),
+            uploaded_by=asistente,
+        )
+
+    if not p_pagado.payment_movements.exists():
         dummy_content = b"%PDF-1.4\nConstancia de Transferencia Bancaria BCP\nOperacion 9845124\n%%EOF"
         dummy_file = ContentFile(dummy_content, name="constancia_bcp_pago_450.pdf")
 
@@ -320,7 +434,10 @@ def run():
 
         Payment.objects.create(
             payable=p_pagado,
+            kind=Payment.Kind.PAYMENT,
+            balance_effect=Payment.BalanceEffect.DECREASE,
             amount=Decimal("450.00"),
+            currency=p_pagado.currency,
             paid_on=today - timedelta(days=1),
             operation_reference="BCP-OP-9845124",
             receipt=att,

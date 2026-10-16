@@ -30,6 +30,23 @@ SESSION_COOKIE_NAME = "pagocontrol_session"
 CSRF_COOKIE_NAME = "pagocontrol_csrf"
 CSRF_FAILURE_VIEW = "identity.views.csrf_failure"
 
+
+def _environment_flag(name: str, default: str = "0") -> bool:
+    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+# The demo shortcuts deliberately remain opt-in. They can only be enabled on a
+# local development server, never in a production deployment. Normal access
+# always requires the account password.
+DEMO_ACCESS_ENABLED = DEBUG and _environment_flag("PAGOCONTROL_ENABLE_DEMO_ACCESS")
+DEMO_ACCESS_ALLOWED_HOSTS = {
+    host.strip().lower()
+    for host in os.environ.get("PAGOCONTROL_DEMO_ACCESS_HOSTS", "127.0.0.1,localhost").split(",")
+    if host.strip()
+}
+DEMO_MANAGER_EMAIL = os.environ.get("PAGOCONTROL_DEMO_MANAGER_EMAIL", "gerente.demo@pagos.invalid")
+DEMO_ASSISTANT_EMAIL = os.environ.get("PAGOCONTROL_DEMO_ASSISTANT_EMAIL", "asistente.demo@pagos.invalid")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -91,6 +108,13 @@ LOGOUT_REDIRECT_URL = "/login/"
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.PBKDF2PasswordHasher",
     "django.contrib.auth.hashers.Argon2PasswordHasher",
+]
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 10}},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 LANGUAGE_CODE = "es-pe"

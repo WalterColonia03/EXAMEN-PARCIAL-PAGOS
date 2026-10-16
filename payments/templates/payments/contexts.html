@@ -1,0 +1,69 @@
+{% extends "payments/base.html" %}
+
+{% block title %}Ámbitos administrados{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Ámbitos administrados</h1>
+    <p class="page-subtitle">Organiza por separado las obligaciones de empresas, personas, hogares, familiares o patrimonio.</p>
+  </div>
+</div>
+
+<div class="manager-grid">
+  <section class="card card-padded" aria-labelledby="new-context-title">
+    <h2 class="section-heading" id="new-context-title">Añadir ámbito</h2>
+    <p class="text-sm text-muted mb-4">Los nombres deben ser claros, por ejemplo “Personal de Carlos” o “Casa de mamá”.</p>
+    <form method="post">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<ul class="errorlist non-field-errors" role="alert">{% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+      <div class="form-grid">
+        {% for field in form %}
+        <div class="form-field {% if field.name == 'name' %}full-width{% endif %}"{% if field.name == 'company' %} id="context-company-field"{% elif field.name == 'default_beneficiary_name' %} id="context-beneficiary-field"{% endif %}>
+          <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
+          {{ field }}
+          {% if field.help_text %}<p class="help-text">{{ field.help_text }}</p>{% endif %}
+          {% if field.errors %}<ul class="errorlist">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Guardar ámbito</button></div>
+    </form>
+  </section>
+
+  <section class="card card-padded" aria-labelledby="contexts-title">
+    <h2 class="section-heading" id="contexts-title">Ámbitos disponibles</h2>
+    {% if contexts %}
+    <div class="attention-list mt-3">
+      {% for context in contexts %}
+      <a class="attention-item" href="{% url 'payment-context-edit' context.pk %}">
+        <span class="attention-item__body">
+          <span class="attention-item__title">{{ context.name }}</span>
+          <span class="attention-item__meta">{{ context.get_kind_display }} · {{ context.payable_count }} obligación{{ context.payable_count|pluralize:"es" }} · {% if context.assistant_access %}Compartido con asistente{% else %}Solo gerente{% endif %}</span>
+        </span>
+        <span class="attention-item__arrow" aria-hidden="true">→</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}<p class="text-muted">Todavía no hay ámbitos.</p>{% endif %}
+  </section>
+</div>
+<script>
+(function () {
+  var kind = document.getElementById('{{ form.kind.id_for_label }}');
+  var companyField = document.getElementById('context-company-field');
+  var company = document.getElementById('{{ form.company.id_for_label }}');
+  var beneficiary = document.getElementById('{{ form.default_beneficiary_name.id_for_label }}');
+  var ui = window.PagoControlForms;
+  function updateContextFields() {
+    if (!kind || !ui) return;
+    var business = kind.value === 'BUSINESS';
+    ui.setRegionVisible(companyField, business);
+    ui.setRequired(company, business);
+    ui.setRequired(beneficiary, kind.value === 'THIRD_PARTY');
+  }
+  if (kind) kind.addEventListener('change', updateContextFields);
+  updateContextFields();
+})();
+</script>
+{% endblock %}

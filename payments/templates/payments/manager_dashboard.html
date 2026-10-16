@@ -19,10 +19,23 @@
 <form method="get" class="filter-bar" role="search" aria-label="Filtros del control gerencial">
   <label for="id_month">Período</label>
   <input type="month" name="month" id="id_month" class="control" style="min-width:160px" value="{{ selected_month|date:'Y-m' }}" aria-label="Seleccionar mes">
+  <label for="{{ filter_form.context.id_for_label }}">Ámbito</label>
+  {{ filter_form.context }}
   <label for="{{ filter_form.company.id_for_label }}">Empresa</label>
   {{ filter_form.company }}
   <label for="{{ filter_form.branch.id_for_label }}">Local</label>
   {{ filter_form.branch }}
+  <label for="{{ filter_form.category.id_for_label }}">Categoría</label>
+  {{ filter_form.category }}
+  <label for="{{ filter_form.currency.id_for_label }}">Moneda</label>
+  {{ filter_form.currency }}
+  <label for="{{ filter_form.creditor.id_for_label }}">Acreedor</label>
+  {{ filter_form.creditor }}
+  <label for="{{ filter_form.person.id_for_label }}">Titular o beneficiario</label>
+  {{ filter_form.person }}
+  <label for="{{ filter_form.due_from.id_for_label }}">Desde</label>{{ filter_form.due_from }}
+  <label for="{{ filter_form.due_to.id_for_label }}">Hasta</label>{{ filter_form.due_to }}
+  <label for="{{ filter_form.sensitive.id_for_label }}">Privacidad</label>{{ filter_form.sensitive }}
   <button type="submit" class="btn btn-primary btn-sm" id="btn-ver-mes">Actualizar vista</button>
 </form>
 
@@ -31,18 +44,13 @@
     <div class="card-header" style="padding:0 0 14px; margin-bottom:16px">
       <div><p class="section-heading" style="margin-bottom:4px">Liquidez próxima</p><p class="text-sm text-muted">Monto pendiente por vencer desde hoy, con los filtros seleccionados.</p></div>
     </div>
-    <div class="cashflow-grid">
-      <div class="cashflow-card">
-        <span class="cashflow-card__label">Necesario en los próximos 7 días</span>
-        <strong class="cashflow-card__value">S/ {{ cashflow.next_week.amount|floatformat:2|intcomma }}</strong>
-        <span class="cashflow-card__meta">{{ cashflow.next_week.count }} obligación{{ cashflow.next_week.count|pluralize:"es" }} pendiente{{ cashflow.next_week.count|pluralize:"s" }}</span>
-      </div>
-      <div class="cashflow-card">
-        <span class="cashflow-card__label">Necesario en los próximos 30 días</span>
-        <strong class="cashflow-card__value">S/ {{ cashflow.next_month.amount|floatformat:2|intcomma }}</strong>
-        <span class="cashflow-card__meta">{{ cashflow.next_month.count }} obligación{{ cashflow.next_month.count|pluralize:"es" }} pendiente{{ cashflow.next_month.count|pluralize:"s" }}</span>
-      </div>
+    {% for code, group in cashflow_by_currency.items %}
+    <h3 class="text-sm mb-2">{{ group.label }}</h3>
+    <div class="cashflow-grid mb-3">
+      <div class="cashflow-card"><span class="cashflow-card__label">Próximos 7 días</span><strong class="cashflow-card__value">{{ code }} {{ group.next_week.amount|floatformat:2|intcomma }}</strong><span class="cashflow-card__meta">{{ group.next_week.count }} obligación{{ group.next_week.count|pluralize:"es" }}</span></div>
+      <div class="cashflow-card"><span class="cashflow-card__label">Próximos 30 días</span><strong class="cashflow-card__value">{{ code }} {{ group.next_month.amount|floatformat:2|intcomma }}</strong><span class="cashflow-card__meta">{{ group.next_month.count }} obligación{{ group.next_month.count|pluralize:"es" }}</span></div>
     </div>
+    {% empty %}<p class="text-muted">No hay saldos próximos con los filtros seleccionados.</p>{% endfor %}
   </div>
   <aside class="card card-padded" aria-labelledby="attention-title">
     <p class="section-heading" id="attention-title">Puntos de control</p>
@@ -53,7 +61,7 @@
           <span class="attention-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg></span>
           <span class="attention-item__body">
             <span class="attention-item__title">{{ payable.concept }}</span>
-            <span class="attention-item__meta">{% if payable.due_date < today %}Vencida: requiere seguimiento{% elif payable.is_incomplete or not payable.amount %}Completar monto o información{% else %}Documento de sustento pendiente{% endif %} · vence {{ payable.due_date|date:"d/m" }}</span>
+            <span class="attention-item__meta">{% if payable.due_date < today %}Vencida: requiere seguimiento{% elif payable.category == 'SERVICE' and not payable.service_account %}Crear cuenta de servicio{% elif payable.is_incomplete or not payable.amount %}Completar monto o información{% else %}Documento de sustento pendiente{% endif %} · vence {{ payable.due_date|date:"d/m" }}</span>
           </span>
           <span class="attention-item__arrow" aria-hidden="true">→</span>
         </a>
@@ -67,26 +75,57 @@
 
 <div class="board-heading">
   <div>
+    <h2>Excepciones que requieren decisión</h2>
+    <p>Accesos directos a la cola para resolver datos, evidencia e identificadores antes de ejecutar pagos.</p>
+  </div>
+</div>
+<section class="focus-grid" aria-label="Excepciones operativas">
+  <a class="focus-card focus-card--danger" href="{% url 'payments-board' %}?state=OVERDUE">
+    <span class="focus-card__label">Vencidas</span>
+    <strong class="focus-card__value">{{ exception_summary.overdue }}</strong>
+    <span class="focus-card__hint">Obligaciones que ya excedieron su vencimiento.</span>
+  </a>
+  <a class="focus-card" href="{% url 'payments-board' %}?exception=MISSING_SERVICE_ACCOUNT">
+    <span class="focus-card__label">Sin cuenta de servicio</span>
+    <strong class="focus-card__value">{{ exception_summary.without_service_account }}</strong>
+    <span class="focus-card__hint">Falta el código de servicio.</span>
+  </a>
+  <a class="focus-card" href="{% url 'payments-board' %}?exception=MISSING_SOURCE_DOCUMENT">
+    <span class="focus-card__label">Sin sustento</span>
+    <strong class="focus-card__value">{{ exception_summary.without_source_document }}</strong>
+    <span class="focus-card__hint">Aún no cuentan con recibo o factura adjunta.</span>
+  </a>
+  <a class="focus-card focus-card--warning" href="{% url 'payments-board' %}?exception=INCOMPLETE">
+    <span class="focus-card__label">Datos incompletos</span>
+    <strong class="focus-card__value">{{ exception_summary.incomplete }}</strong>
+    <span class="focus-card__hint">Monto o información operativa pendiente.</span>
+  </a>
+</section>
+
+<div class="board-heading">
+  <div>
     <h2>Resultado de {{ selected_month|date:"F Y" }}</h2>
     <p>Resumen del período seleccionado. Cada obligación se contabiliza una sola vez.</p>
   </div>
 </div>
 
-{% with paid=summary.paid pending=summary.pending overdue=summary.overdue suspended=summary.suspended %}
+{% for code, group in summary_by_currency.items %}
+{% with paid=group.buckets.paid partial=group.buckets.partial pending=group.buckets.pending overdue=group.buckets.overdue suspended=group.buckets.suspended disputed=group.buckets.disputed refunded=group.buckets.refunded %}
+<h3 class="section-heading mt-4">{{ group.label }}</h3>
 <section class="focus-grid" aria-label="Resumen mensual">
   <a class="focus-card focus-card--success" href="#detalle-periodo">
     <span class="focus-card__label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Pagado</span>
-    <strong class="focus-card__value">S/ {{ paid.amount|default:0|floatformat:2|intcomma }}</strong>
+    <strong class="focus-card__value">{{ code }} {{ paid.amount|default:0|floatformat:2|intcomma }}</strong>
     <span class="focus-card__hint">{{ paid.count }} obligación{{ paid.count|pluralize:"es" }} registrada{{ paid.count|pluralize:"s" }} como pagada.</span>
   </a>
   <a class="focus-card focus-card--danger" href="#detalle-periodo">
     <span class="focus-card__label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Vencido sin pagar</span>
-    <strong class="focus-card__value">S/ {{ overdue.amount|default:0|floatformat:2|intcomma }}</strong>
+    <strong class="focus-card__value">{{ code }} {{ overdue.amount|default:0|floatformat:2|intcomma }}</strong>
     <span class="focus-card__hint">{{ overdue.count }} obligación{{ overdue.count|pluralize:"es" }} vencida{{ overdue.count|pluralize:"s" }}.</span>
   </a>
   <a class="focus-card" href="#detalle-periodo">
     <span class="focus-card__label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/></svg>Pendiente</span>
-    <strong class="focus-card__value">S/ {{ pending.amount|default:0|floatformat:2|intcomma }}</strong>
+    <strong class="focus-card__value">{{ code }} {{ pending.amount|default:0|floatformat:2|intcomma }}</strong>
     <span class="focus-card__hint">{{ pending.count }} obligación{{ pending.count|pluralize:"es" }} aún por pagar.</span>
   </a>
   <a class="focus-card" href="#detalle-periodo">
@@ -94,11 +133,27 @@
     <strong class="focus-card__value">{{ suspended.count }}</strong>
     <span class="focus-card__hint">No se incorpora al monto pendiente.</span>
   </a>
+  <a class="focus-card focus-card--warning" href="#detalle-periodo"><span class="focus-card__label">Saldo de pagos parciales</span><strong class="focus-card__value">{{ code }} {{ partial.amount|default:0|floatformat:2|intcomma }}</strong><span class="focus-card__hint">{{ partial.count }} obligación{{ partial.count|pluralize:"es" }} con abonos.</span></a>
+  <a class="focus-card" href="#detalle-periodo"><span class="focus-card__label">En disputa</span><strong class="focus-card__value">{{ disputed.count }}</strong><span class="focus-card__hint">Requieren una decisión antes de pagar.</span></a>
+  <a class="focus-card focus-card--success" href="#detalle-periodo"><span class="focus-card__label">Reembolsadas</span><strong class="focus-card__value">{{ refunded.count }}</strong><span class="focus-card__hint">Gastos recuperables reembolsados por completo.</span></a>
+  {% if group.reimbursement_pending_amount or group.reimbursement_received_amount %}
+  <a class="focus-card focus-card--warning" href="#detalle-periodo">
+    <span class="focus-card__label">Por recuperar</span>
+    <strong class="focus-card__value">{{ code }} {{ group.reimbursement_pending_amount|floatformat:2|intcomma }}</strong>
+    <span class="focus-card__hint">{{ group.reimbursement_pending.count }} gasto{{ group.reimbursement_pending.count|pluralize:"s" }} reembolsable{{ group.reimbursement_pending.count|pluralize:"s" }} aún pendiente{{ group.reimbursement_pending.count|pluralize:"s" }} de recuperar.</span>
+  </a>
+  <a class="focus-card focus-card--success" href="#detalle-periodo">
+    <span class="focus-card__label">Reembolsos recibidos</span>
+    <strong class="focus-card__value">{{ code }} {{ group.reimbursement_received_amount|floatformat:2|intcomma }}</strong>
+    <span class="focus-card__hint">Dinero recuperado para gastos adelantados durante el período.</span>
+  </a>
+  {% endif %}
 </section>
 {% endwith %}
+{% empty %}<div class="card card-padded"><p class="text-muted">No hay obligaciones en este período.</p></div>{% endfor %}
 
 <div class="board-heading" id="detalle-periodo">
-  <div><h2>Detalle del período</h2><p>Abre una obligación para revisar su documento, comprobante y trazabilidad.</p></div>
+  <div><h2>Detalle del período</h2><p>Abre una obligación para revisar su documento, comprobante e historial.</p></div>
   <span class="board-count">{{ payables|length }} registro{{ payables|length|pluralize:"s" }}</span>
 </div>
 
@@ -107,17 +162,17 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th scope="col">Obligación</th><th scope="col">Empresa / local</th><th scope="col">Vence</th><th scope="col">Monto</th><th scope="col">Estado</th><th scope="col">Evidencia de pago</th></tr>
+        <tr><th scope="col">Obligación</th><th scope="col">Ámbito / local</th><th scope="col">Vence</th><th scope="col">Monto</th><th scope="col">Estado</th><th scope="col">Evidencia de pago</th></tr>
       </thead>
       <tbody>
         {% for payable in payables %}
         {% with vs=payable.visual_status %}
         <tr>
           <td><a href="{% url 'payment-payable-detail' payable.pk %}" id="mgr-link-{{ payable.pk }}" class="fw-600">{{ payable.concept }}</a><div class="text-xs text-muted">{{ payable.creditor.name }} · {{ payable.get_category_display }}</div></td>
-          <td class="text-sm">{{ payable.company.name }}{% if payable.branch %}<br><span class="text-muted">{{ payable.branch.name }}</span>{% endif %}</td>
+          <td class="text-sm">{{ payable.context.name }}{% if payable.branch %}<br><span class="text-muted">{{ payable.branch.name }}</span>{% endif %}</td>
           <td class="text-sm">{{ payable.due_date|date:"d/m/Y" }}</td>
-          <td class="fw-600">{% if payable.amount %}S/ {{ payable.amount|floatformat:2|intcomma }}{% else %}<span class="text-muted">Por definir</span>{% endif %}</td>
-          <td><span class="status-badge {% if vs == 'OVERDUE' %}s-overdue{% elif vs == 'DUE_TODAY' %}s-today{% elif vs == 'DUE_SOON' %}s-soon{% elif vs == 'PAID' %}s-paid{% elif vs == 'SUSPENDED' %}s-suspended{% else %}s-pending{% endif %}">{% if vs == 'OVERDUE' %}Vencida{% elif vs == 'DUE_TODAY' %}Vence hoy{% elif vs == 'DUE_SOON' %}Próxima{% elif vs == 'PAID' %}Pagada{% elif vs == 'SUSPENDED' %}Suspendida{% else %}Pendiente{% endif %}</span>{% if payable.is_incomplete %}<div class="text-xs text-danger mt-1">Datos incompletos</div>{% endif %}</td>
+          <td class="fw-600">{% if payable.amount %}{{ payable.currency_symbol }} {{ payable.amount|floatformat:2|intcomma }}{% else %}<span class="text-muted">Por definir</span>{% endif %}</td>
+          <td><span class="status-badge {% if vs == 'OVERDUE' %}s-overdue{% elif vs == 'DUE_TODAY' or vs == 'PARTIAL' %}s-today{% elif vs == 'DUE_SOON' %}s-soon{% elif vs == 'PAID' or vs == 'REFUNDED' %}s-paid{% elif vs == 'SUSPENDED' or vs == 'CANCELLED' %}s-suspended{% else %}s-pending{% endif %}">{{ payable.visual_status_label }}</span>{% if payable.is_incomplete %}<div class="text-xs text-danger mt-1">Datos incompletos</div>{% endif %}</td>
           <td class="text-sm">{% if payable.payment %}<span class="text-success">Comprobante registrado</span><div class="text-xs text-muted">{{ payable.payment.paid_on|date:"d/m/Y" }}</div>{% else %}<span class="text-muted">Pendiente</span>{% endif %}</td>
         </tr>
         {% endwith %}
@@ -127,6 +182,6 @@
   </div>
 </div>
 {% else %}
-<div class="card"><div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4m8-4v4"/></svg><p class="empty-state-title">No hay obligaciones para este período</p><p class="empty-state-desc">Cambia el mes o ajusta los filtros de empresa y local.</p></div></div>
+<div class="card"><div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4m8-4v4"/></svg><p class="empty-state-title">No hay obligaciones para este período</p><p class="empty-state-desc">Cambia el mes o ajusta el ámbito y los demás filtros.</p></div></div>
 {% endif %}
 {% endblock %}

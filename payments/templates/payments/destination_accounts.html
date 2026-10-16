@@ -7,7 +7,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Cuentas autorizadas</h1>
-    <p class="page-subtitle">El gerente define los destinos permitidos; el asistente solo puede consultarlos al registrar una obligación.</p>
+    <p class="page-subtitle">El gerente registra las cuentas de pago autorizadas para cada acreedor o proveedor.</p>
   </div>
 </div>
 
@@ -44,7 +44,7 @@
             <label for="{{ form.account_number.id_for_label }}" class="form-label">Número de cuenta <span class="text-danger">*</span></label>
             {{ form.account_number }}
             {% if form.account_number.errors %}<ul class="errorlist">{% for e in form.account_number.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
-            <p class="help-text">Use números de demostración (Ej. DEMO-00123456789).</p>
+            <p class="help-text">Ingresa el número tal como figura en los datos del proveedor.</p>
           </div>
           <div class="checkbox-row">
             {{ form.is_active }}
@@ -74,7 +74,7 @@
         <div class="account-info">
           <div class="account-name">{{ account.creditor.name }}</div>
           <div class="account-detail">{{ account.bank_name }} · {{ account.account_holder }}</div>
-          <div class="account-number">{{ account.account_number }}</div>
+          <div class="account-number">{{ account.masked_account_number }}</div>
           {% if account.updated_by %}
           <div class="text-xs text-muted" style="margin-top:6px">
             Actualizado por {{ account.updated_by.get_short_name|default:account.updated_by.username }} el {{ account.updated_at|date:"d/m/Y" }}

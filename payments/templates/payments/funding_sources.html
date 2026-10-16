@@ -1,0 +1,36 @@
+{% extends "payments/base.html" %}
+
+{% block title %}Fuentes de fondos{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1 class="page-title">Fuentes de fondos</h1><p class="page-subtitle">Identifica de dónde sale el dinero sin mostrar números completos en las listas.</p></div></div>
+<div class="manager-grid">
+  <section class="card card-padded" aria-labelledby="new-source-title">
+    <h2 class="section-heading" id="new-source-title">Añadir fuente</h2>
+    <form method="post" class="mt-3">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<ul class="errorlist non-field-errors" role="alert">{% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+      <div class="form-grid">
+        {% for field in form %}<div class="form-field"{% if field.name == 'institution' or field.name == 'account_holder' or field.name == 'identifier' %} data-source-detail{% endif %}><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>{{ field }}{% if field.help_text %}<p class="help-text">{{ field.help_text }}</p>{% endif %}{% if field.errors %}<ul class="errorlist">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}</div>{% endfor %}
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Guardar fuente</button></div>
+    </form>
+  </section>
+  <section class="card card-padded" aria-labelledby="sources-title">
+    <h2 class="section-heading" id="sources-title">Fuentes registradas</h2>
+    {% if sources %}<div class="attention-list mt-3">{% for source in sources %}<a class="attention-item" href="{% url 'payment-funding-source-edit' source.pk %}"><span class="attention-item__body"><span class="attention-item__title">{{ source.name }}</span><span class="attention-item__meta">{{ source.context.name }} · {{ source.get_kind_display }} · {{ source.get_currency_display }}{% if source.identifier %} · {{ source.masked_identifier }}{% endif %}</span></span><span class="attention-item__arrow" aria-hidden="true">→</span></a>{% endfor %}</div>{% else %}<p class="text-muted">Todavía no hay fuentes de fondos.</p>{% endif %}
+  </section>
+</div>
+<script>
+(function () {
+  var kind = document.getElementById('{{ form.kind.id_for_label }}');
+  var details = document.querySelectorAll('[data-source-detail]');
+  var ui = window.PagoControlForms;
+  function updateSourceFields() {
+    var show = Boolean(kind && kind.value && kind.value !== 'CASH');
+    details.forEach(function (field) { ui.setRegionVisible(field, show); });
+  }
+  if (kind) kind.addEventListener('change', updateSourceFields);
+  updateSourceFields();
+})();
+</script>
+{% endblock %}

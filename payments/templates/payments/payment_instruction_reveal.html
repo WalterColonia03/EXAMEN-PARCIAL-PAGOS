@@ -1,0 +1,46 @@
+{% extends "payments/base.html" %}
+
+{% block title %}Instrucción de pago autorizada{% endblock %}
+
+{% block content %}
+<nav class="flex items-center gap-2 text-sm text-muted mb-4" aria-label="Ruta de navegación">
+  <a href="{% url 'payment-payable-detail' payable.pk %}">Detalle de obligación</a>
+  <span aria-current="page">Instrucción autorizada</span>
+</nav>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Instrucción de pago autorizada</h1>
+    <p class="page-subtitle">{{ payable.concept }} · {{ payable.creditor.name }}</p>
+  </div>
+</div>
+
+<aside class="context-note" role="status" aria-label="Uso seguro de los datos de pago">
+  <span>Usa estos datos solo para realizar este pago y evita compartirlos fuera del proceso autorizado.</span>
+</aside>
+
+<section class="card card-padded" aria-labelledby="instruction-title" style="max-width:720px">
+  <h2 class="section-heading" id="instruction-title">Datos para ejecutar el pago</h2>
+  <dl class="dl-grid">
+    {% if payable.service_account %}
+    <dt class="dl-label">Identificador de servicio</dt>
+    <dd class="dl-value mono">{{ payable.service_account.primary_identifier }}</dd>
+    {% endif %}
+
+    {% if payable.has_destination_snapshot %}
+    <dt class="dl-label">Banco</dt>
+    <dd class="dl-value">{{ payable.destination_bank_name_snapshot }}</dd>
+
+    <dt class="dl-label">Titular</dt>
+    <dd class="dl-value">{{ payable.destination_account_holder_snapshot }}</dd>
+
+    <dt class="dl-label">Número de cuenta</dt>
+    <dd class="dl-value mono">{{ payable.destination_account_number_snapshot }}</dd>
+
+    {% endif %}
+  </dl>
+  <div class="form-actions">
+    <a href="{% url 'payment-payable-detail' payable.pk %}" class="btn btn-secondary">Volver al detalle</a>
+  </div>
+</section>
+{% endblock %}

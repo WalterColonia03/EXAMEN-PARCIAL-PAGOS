@@ -1,6 +1,6 @@
 {% extends "payments/base.html" %}
 
-{% block title %}Nuevo compromiso de pago{% endblock %}
+{% block title %}{% if editing_commitment %}Editar compromiso{% else %}Nuevo compromiso de pago{% endif %}{% endblock %}
 
 {% block content %}
 
@@ -10,13 +10,13 @@
     Tablero
   </a>
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
-  <span aria-current="page">Nuevo compromiso</span>
+  <span aria-current="page">{% if editing_commitment %}Editar compromiso{% else %}Nuevo compromiso{% endif %}</span>
 </nav>
 
 <div class="page-header">
   <div>
-    <h1 class="page-title">Configurar compromiso recurrente</h1>
-    <p class="page-subtitle">Define la regla de un servicio, proveedor o impuesto. Luego generarás obligaciones concretas para cada período, sin repetir datos.</p>
+    <h1 class="page-title">{% if editing_commitment %}Actualizar compromiso{% else %}Configurar compromiso de pago{% endif %}</h1>
+    <p class="page-subtitle">Define las reglas futuras de la obligación. Los períodos ya creados conservan sus propios datos.</p>
   </div>
 </div>
 
@@ -34,6 +34,13 @@
     {% endif %}
 
     <div class="form-grid">
+
+      <div class="form-field full-width">
+        <label for="{{ form.context.id_for_label }}" class="form-label">¿A quién corresponde? <span class="text-danger">*</span></label>
+        {{ form.context }}
+        <p class="help-text">Puede ser una empresa, una persona, un hogar, un familiar o una entidad patrimonial.</p>
+        {% if form.context.errors %}<ul class="errorlist">{% for e in form.context.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
 
       <!-- Nombre -->
       <div class="form-field full-width">
@@ -57,28 +64,114 @@
       </div>
 
       <!-- Empresa -->
-      <div class="form-field">
-        <label for="{{ form.company.id_for_label }}" class="form-label">Empresa <span class="text-danger">*</span></label>
+      <div class="form-field" id="commitment-company-field">
+        <label for="{{ form.company.id_for_label }}" class="form-label">Empresa (solo para ámbito empresarial)</label>
         {{ form.company }}
         {% if form.company.errors %}<ul class="errorlist">{% for e in form.company.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
       </div>
 
-      <!-- Local -->
       <div class="form-field">
+        <label for="{{ form.holder_name.id_for_label }}" class="form-label">Titular o deudor</label>{{ form.holder_name }}
+        {% if form.holder_name.errors %}<ul class="errorlist">{% for e in form.holder_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="form-field">
+        <label for="{{ form.beneficiary_name.id_for_label }}" class="form-label">Beneficia a</label>{{ form.beneficiary_name }}
+        {% if form.beneficiary_name.errors %}<ul class="errorlist">{% for e in form.beneficiary_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="form-field"><label for="{{ form.payment_nature.id_for_label }}" class="form-label">Naturaleza</label>{{ form.payment_nature }}</div>
+      <div class="form-field"><label for="{{ form.currency.id_for_label }}" class="form-label">Moneda</label>{{ form.currency }}</div>
+
+      <!-- Local -->
+      <div class="form-field" id="commitment-branch-field">
         <label for="{{ form.branch.id_for_label }}" class="form-label">Local (opcional)</label>
         {{ form.branch }}
         {% if form.branch.errors %}<ul class="errorlist">{% for e in form.branch.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
       </div>
 
+      <div class="form-field" id="commitment-start-field">
+        <label for="{{ form.start_date.id_for_label }}" class="form-label">Inicio de recurrencia</label>{{ form.start_date }}
+        {% if form.start_date.errors %}<ul class="errorlist">{% for e in form.start_date.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="form-field" id="commitment-end-field"><label for="{{ form.end_date.id_for_label }}" class="form-label">Fin de recurrencia (opcional)</label>{{ form.end_date }}</div>
+      <div class="form-field" id="commitment-interval-count-field"><label for="{{ form.interval_count.id_for_label }}" class="form-label">Repetir cada</label>{{ form.interval_count }}</div>
+      <div class="form-field" id="commitment-interval-unit-field"><label for="{{ form.interval_unit.id_for_label }}" class="form-label">Unidad para intervalo personalizado</label>{{ form.interval_unit }}{% if form.interval_unit.errors %}<ul class="errorlist">{% for e in form.interval_unit.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>
+
       <!-- Acreedor -->
       <div class="form-field">
-        <label for="{{ form.creditor.id_for_label }}" class="form-label">Acreedor <span class="text-danger">*</span></label>
-        {{ form.creditor }}
-        {% if form.creditor.errors %}<ul class="errorlist">{% for e in form.creditor.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <div class="flex items-center justify-between mb-1" style="display:flex;justify-content:space-between;align-items:center;">
+          <label for="{{ form.creditor.id_for_label }}" class="form-label" style="margin-bottom:0">Acreedor <span class="text-danger">*</span></label>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-toggle-commitment-creditor" style="font-size:12px;padding:2px 8px;color:var(--c-accent,#0071e3);cursor:pointer;background:none;border:none;">+ Registrar nuevo acreedor</button>
+        </div>
+        <div id="box-existing-commitment-creditor">
+          {{ form.creditor }}
+          {% if form.creditor.errors %}<ul class="errorlist">{% for e in form.creditor.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+        <div id="box-new-commitment-creditor" style="background:rgba(0,113,227,0.04);border:1px solid rgba(0,113,227,0.18);border-radius:10px;padding:12px;margin-top:6px;">
+          <div style="margin-bottom:8px;">
+            <label for="{{ form.new_creditor_name.id_for_label }}" class="form-label">Nombre del nuevo acreedor <span class="text-danger">*</span></label>
+            {{ form.new_creditor_name }}
+            {% if form.new_creditor_name.errors %}<ul class="errorlist">{% for e in form.new_creditor_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          <div>
+            <label for="{{ form.new_creditor_tax_id.id_for_label }}" class="form-label">RUC / Identificador fiscal (opcional)</label>
+            {{ form.new_creditor_tax_id }}
+            {% if form.new_creditor_tax_id.errors %}<ul class="errorlist">{% for e in form.new_creditor_tax_id.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          <button type="button" id="btn-cancel-commitment-creditor" style="margin-top:8px;font-size:12px;background:none;border:none;color:var(--c-muted,#6e6e73);cursor:pointer;text-decoration:underline;">← Usar acreedor existente</button>
+        </div>
+      </div>
+
+      <div class="form-field" id="commitment-service-account-field">
+        <label for="{{ form.service_account.id_for_label }}" class="form-label">Cuenta de servicio</label>
+        {{ form.service_account }}
+        {% if form.service_account.errors %}<ul class="errorlist">{% for e in form.service_account.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <p class="help-text">Obligatoria para compromisos de servicio.{% if user.role.code == 'GERENTE' %} <a href="{% url 'payment-service-account-create' %}">Crear una cuenta de servicio</a>.{% else %} Solicite al gerente que registre una cuenta si todavía no existe.{% endif %}</p>
+      </div>
+
+      <div class="form-field" data-commitment-category="CREDIT_CARD">
+        <label for="{{ form.card_issuer.id_for_label }}" class="form-label">Emisor de la tarjeta <span class="text-danger">*</span></label>
+        {{ form.card_issuer }}
+        {% if form.card_issuer.errors %}<ul class="errorlist">{% for e in form.card_issuer.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="form-field" data-commitment-category="CREDIT_CARD">
+        <label for="{{ form.card_last_four.id_for_label }}" class="form-label">Últimos cuatro dígitos <span class="text-danger">*</span></label>
+        {{ form.card_last_four }}
+        <p class="help-text">Solo se guardan los cuatro últimos dígitos, nunca el número completo.</p>
+        {% if form.card_last_four.errors %}<ul class="errorlist">{% for e in form.card_last_four.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <div class="form-field full-width" data-commitment-category="LOAN">
+        <label for="{{ form.loan_contract.id_for_label }}" class="form-label">Contrato del préstamo <span class="text-danger">*</span></label>
+        {{ form.loan_contract }}
+        {% if form.loan_contract.errors %}<ul class="errorlist">{% for e in form.loan_contract.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <div class="form-field full-width" data-commitment-category="INSURANCE">
+        <label for="{{ form.insurance_policy.id_for_label }}" class="form-label">Póliza <span class="text-danger">*</span></label>
+        {{ form.insurance_policy }}
+        {% if form.insurance_policy.errors %}<ul class="errorlist">{% for e in form.insurance_policy.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <div class="form-field full-width" data-commitment-category="HOUSING">
+        <label for="{{ form.property_reference.id_for_label }}" class="form-label">Vivienda o propiedad <span class="text-danger">*</span></label>
+        {{ form.property_reference }}
+        {% if form.property_reference.errors %}<ul class="errorlist">{% for e in form.property_reference.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <div class="form-field full-width" data-commitment-category="TRAVEL_EVENT">
+        <label for="{{ form.travel_subject.id_for_label }}" class="form-label">Viaje, viajero o evento <span class="text-danger">*</span></label>
+        {{ form.travel_subject }}
+        {% if form.travel_subject.errors %}<ul class="errorlist">{% for e in form.travel_subject.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <div class="form-field full-width" data-commitment-category="INVESTMENT">
+        <label for="{{ form.investment_vehicle.id_for_label }}" class="form-label">Inversión o vehículo patrimonial <span class="text-danger">*</span></label>
+        {{ form.investment_vehicle }}
+        {% if form.investment_vehicle.errors %}<ul class="errorlist">{% for e in form.investment_vehicle.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
       </div>
 
       <!-- Día habitual de vencimiento -->
-      <div class="form-field">
+      <div class="form-field" id="commitment-due-day-field">
         <label for="{{ form.usual_due_day.id_for_label }}" class="form-label">Día habitual de vencimiento</label>
         {{ form.usual_due_day }}
         {% if form.usual_due_day.errors %}<ul class="errorlist">{% for e in form.usual_due_day.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
@@ -93,15 +186,17 @@
       </div>
 
       <!-- Monto fijo -->
-      <div class="form-field">
-        <label for="{{ form.fixed_amount.id_for_label }}" class="form-label">Monto fijo (S/)</label>
+      <div class="form-field" id="commitment-fixed-amount-field">
+        <label for="{{ form.fixed_amount.id_for_label }}" class="form-label">Monto fijo</label>
         {{ form.fixed_amount }}
         {% if form.fixed_amount.errors %}<ul class="errorlist">{% for e in form.fixed_amount.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
         <p class="help-text">{{ form.fixed_amount.help_text }}</p>
       </div>
 
+      <div class="form-field"><label for="{{ form.funding_source.id_for_label }}" class="form-label">Fuente de fondos prevista</label>{{ form.funding_source }}{% if form.funding_source.errors %}<ul class="errorlist">{% for e in form.funding_source.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>
+
       <!-- Cuenta de destino -->
-      <div class="form-field">
+      <div class="form-field" id="commitment-destination-field">
         <label for="{{ form.destination_account.id_for_label }}" class="form-label">Cuenta de destino</label>
         {{ form.destination_account }}
         {% if form.destination_account.errors %}<ul class="errorlist">{% for e in form.destination_account.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
@@ -113,11 +208,110 @@
     <div class="form-actions">
       <button type="submit" class="btn btn-primary" id="btn-guardar-compromiso">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-        Guardar compromiso
+        {% if editing_commitment %}Guardar cambios futuros{% else %}Guardar compromiso{% endif %}
       </button>
       <a href="{% url 'payments-board' %}" class="btn btn-secondary" id="btn-cancelar-compromiso">Cancelar</a>
     </div>
   </form>
 </div>
+
+<script>
+(function () {
+  'use strict';
+  var ui = window.PagoControlForms;
+  var context = document.getElementById('{{ form.context.id_for_label }}');
+  var category = document.getElementById('{{ form.category.id_for_label }}');
+  var frequency = document.getElementById('{{ form.frequency.id_for_label }}');
+  var intervalUnit = document.getElementById('{{ form.interval_unit.id_for_label }}');
+  var amountMode = document.getElementById('{{ form.amount_mode.id_for_label }}');
+  var company = document.getElementById('commitment-company-field');
+  var branch = document.getElementById('commitment-branch-field');
+  var serviceAccount = document.getElementById('commitment-service-account-field');
+  var serviceAccountInput = document.getElementById('{{ form.service_account.id_for_label }}');
+  var categoryFields = document.querySelectorAll('[data-commitment-category]');
+  var startField = document.getElementById('commitment-start-field');
+  var endField = document.getElementById('commitment-end-field');
+  var intervalCountField = document.getElementById('commitment-interval-count-field');
+  var intervalUnitField = document.getElementById('commitment-interval-unit-field');
+  var dueDayField = document.getElementById('commitment-due-day-field');
+  var startInput = document.getElementById('{{ form.start_date.id_for_label }}');
+  var intervalCountInput = document.getElementById('{{ form.interval_count.id_for_label }}');
+  var dueDayInput = document.getElementById('{{ form.usual_due_day.id_for_label }}');
+  var fixedAmountField = document.getElementById('commitment-fixed-amount-field');
+  var fixedAmountInput = document.getElementById('{{ form.fixed_amount.id_for_label }}');
+  var toggleCreditor = document.getElementById('btn-toggle-commitment-creditor');
+  var cancelCreditor = document.getElementById('btn-cancel-commitment-creditor');
+  var existingCreditor = document.getElementById('box-existing-commitment-creditor');
+  var newCreditor = document.getElementById('box-new-commitment-creditor');
+  var creditorInput = document.getElementById('{{ form.creditor.id_for_label }}');
+  var newCreditorInput = document.getElementById('{{ form.new_creditor_name.id_for_label }}');
+  var destinationField = document.getElementById('commitment-destination-field');
+
+  function showNewCreditor(useNew, focusInput) {
+    ui.setRegionVisible(existingCreditor, !useNew);
+    ui.setRegionVisible(newCreditor, useNew);
+    ui.setRegionVisible(toggleCreditor, !useNew);
+    ui.setRegionVisible(destinationField, !useNew);
+    ui.setRequired(creditorInput, !useNew);
+    ui.setRequired(newCreditorInput, useNew);
+    if (focusInput) {
+      if (useNew && newCreditorInput) newCreditorInput.focus();
+      else if (!useNew && toggleCreditor) toggleCreditor.focus();
+    }
+  }
+  if (toggleCreditor) toggleCreditor.addEventListener('click', function () { showNewCreditor(true, true); });
+  if (cancelCreditor) cancelCreditor.addEventListener('click', function () { showNewCreditor(false, true); });
+  showNewCreditor({% if form.new_creditor_name.value %}true{% else %}false{% endif %}, false);
+
+  function updateScope() {
+    if (!context) return;
+    var show = ui.selectedData(context, 'contextKind') === 'BUSINESS';
+    ui.setRegionVisible(company, show);
+    ui.setRegionVisible(branch, show);
+  }
+  if (context) context.addEventListener('change', updateScope);
+  updateScope();
+
+  function updateCategory() {
+    if (!category) return;
+    var isService = category.value === 'SERVICE';
+    ui.setRegionVisible(serviceAccount, isService);
+    ui.setRequired(serviceAccountInput, isService);
+    categoryFields.forEach(function (field) {
+      var show = field.dataset.commitmentCategory === category.value;
+      ui.setRegionVisible(field, show);
+      ui.setRequired(field.querySelector('input, select, textarea'), show);
+    });
+  }
+  function updateFrequency() {
+    if (!frequency) return;
+    var recurring = Boolean(frequency.value) && frequency.value !== 'ONE_TIME';
+    var custom = frequency.value === 'CUSTOM';
+    var monthBased = ['MONTHLY', 'BIMONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL'].indexOf(frequency.value) !== -1;
+    var showDueDay = monthBased || (custom && intervalUnit && intervalUnit.value === 'MONTHS');
+    ui.setRegionVisible(startField, recurring);
+    ui.setRegionVisible(endField, recurring);
+    ui.setRegionVisible(intervalCountField, custom);
+    ui.setRegionVisible(intervalUnitField, custom);
+    ui.setRegionVisible(dueDayField, showDueDay);
+    ui.setRequired(startInput, recurring);
+    ui.setRequired(intervalCountInput, custom);
+    ui.setRequired(intervalUnit, custom);
+    ui.setRequired(dueDayInput, frequency.value === 'MONTHLY');
+  }
+  function updateAmountMode() {
+    var fixed = amountMode && amountMode.value === 'FIXED';
+    ui.setRegionVisible(fixedAmountField, fixed);
+    ui.setRequired(fixedAmountInput, fixed);
+  }
+  if (category) category.addEventListener('change', updateCategory);
+  if (frequency) frequency.addEventListener('change', updateFrequency);
+  if (intervalUnit) intervalUnit.addEventListener('change', updateFrequency);
+  if (amountMode) amountMode.addEventListener('change', updateAmountMode);
+  updateCategory();
+  updateFrequency();
+  updateAmountMode();
+})();
+</script>
 
 {% endblock %}

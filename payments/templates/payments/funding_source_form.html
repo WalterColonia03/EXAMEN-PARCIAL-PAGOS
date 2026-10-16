@@ -1,0 +1,19 @@
+{% extends "payments/base.html" %}
+{% block title %}Editar fuente de fondos{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1 class="page-title">Editar {{ source.name }}</h1><p class="page-subtitle">Los cambios futuros no alteran la fuente guardada en movimientos anteriores.</p></div></div>
+<div class="card card-padded"><form method="post">{% csrf_token %}{% if form.non_field_errors %}<ul class="errorlist non-field-errors" role="alert">{% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}<div class="form-grid">{% for field in form %}<div class="form-field"{% if field.name == 'institution' or field.name == 'account_holder' or field.name == 'identifier' %} data-source-detail{% endif %}><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>{{ field }}{% if field.help_text %}<p class="help-text">{{ field.help_text }}</p>{% endif %}{% if field.errors %}<ul class="errorlist">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}</div>{% endfor %}</div><div class="form-actions"><button class="btn btn-primary" type="submit">Guardar cambios</button><a class="btn btn-secondary" href="{% url 'payment-funding-sources' %}">Cancelar</a></div></form></div>
+<script>
+(function () {
+  var kind = document.getElementById('{{ form.kind.id_for_label }}');
+  var details = document.querySelectorAll('[data-source-detail]');
+  var ui = window.PagoControlForms;
+  function updateSourceFields() {
+    var show = Boolean(kind && kind.value && kind.value !== 'CASH');
+    details.forEach(function (field) { ui.setRegionVisible(field, show); });
+  }
+  if (kind) kind.addEventListener('change', updateSourceFields);
+  updateSourceFields();
+})();
+</script>
+{% endblock %}

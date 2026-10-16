@@ -1,6 +1,6 @@
 {% extends "payments/base.html" %}
 
-{% block title %}Registrar obligación{% endblock %}
+{% block title %}{% if editing_payable %}Editar obligación{% else %}Registrar obligación{% endif %}{% endblock %}
 
 {% block content %}
 
@@ -11,14 +11,14 @@
     Tablero
   </a>
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
-  <span aria-current="page">Registrar obligación</span>
+  <span aria-current="page">{% if editing_payable %}Editar obligación{% else %}Registrar obligación{% endif %}</span>
 </nav>
 
 <div class="page-header">
   <div>
-    <h1 class="page-title">Registrar obligación</h1>
+    <h1 class="page-title">{% if editing_payable %}Completar obligación{% else %}Registrar obligación{% endif %}</h1>
     <p class="page-subtitle">
-      {% if selected_commitment %}A partir del compromiso «{{ selected_commitment.name }}»{% else %}Registra un gasto puntual sin perder la trazabilidad de empresa, local y proveedor.{% endif %}
+      {% if editing_payable %}Completa datos, asocia una cuenta de servicio o corrige la información pendiente sin alterar el historial de pago.{% elif selected_commitment %}A partir del compromiso «{{ selected_commitment.name }}»{% else %}Registra una obligación puntual, identifica a quién corresponde, a quién se paga y cuándo debe atenderse.{% endif %}
     </p>
   </div>
 </div>
@@ -38,8 +38,8 @@
     <div>
       <div class="fw-600">{{ selected_commitment.name }}</div>
       <div class="text-sm text-muted">
-        {{ selected_commitment.company.name }}{% if selected_commitment.branch %} · {{ selected_commitment.branch.name }}{% endif %} &nbsp;·&nbsp; {{ selected_commitment.get_frequency_display }}
-        {% if selected_commitment.fixed_amount %} &nbsp;·&nbsp; S/ {{ selected_commitment.fixed_amount|floatformat:2 }}{% endif %}
+        {{ selected_commitment.context.name }}{% if selected_commitment.branch %} · {{ selected_commitment.branch.name }}{% endif %} &nbsp;·&nbsp; {{ selected_commitment.get_frequency_display }}
+        {% if selected_commitment.fixed_amount %} &nbsp;·&nbsp; {{ selected_commitment.currency }} {{ selected_commitment.fixed_amount|floatformat:2 }}{% endif %}
       </div>
     </div>
   </div>
@@ -55,6 +55,13 @@
     {% endif %}
 
     <div class="form-grid">
+
+      <div class="form-field full-width">
+        <label for="{{ form.context.id_for_label }}" class="form-label">¿A quién corresponde? <span class="text-danger">*</span></label>
+        {{ form.context }}
+        <p class="help-text">Selecciona a la persona, hogar, empresa, familiar o entidad patrimonial correcta.</p>
+        {% if form.context.errors %}<ul class="errorlist">{% for e in form.context.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
 
       <!-- Compromiso -->
       <div class="form-field">
@@ -86,18 +93,32 @@
       </div>
 
       <!-- Empresa -->
-      <div class="form-field">
-        <label for="{{ form.company.id_for_label }}" class="form-label">Empresa <span class="text-danger">*</span></label>
+      <div class="form-field" id="company-field">
+        <label for="{{ form.company.id_for_label }}" class="form-label">Empresa (solo si corresponde)</label>
         {{ form.company }}
         {% if form.company.errors %}<ul class="errorlist">{% for e in form.company.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
       </div>
 
       <!-- Local -->
-      <div class="form-field">
+      <div class="form-field" id="branch-field">
         <label for="{{ form.branch.id_for_label }}" class="form-label">Local (opcional)</label>
         {{ form.branch }}
         {% if form.branch.errors %}<ul class="errorlist">{% for e in form.branch.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
       </div>
+
+      <div class="form-field">
+        <label for="{{ form.holder_name.id_for_label }}" class="form-label">Titular o deudor</label>
+        {{ form.holder_name }}
+        <p class="help-text">Quien asumió formalmente la obligación.</p>
+        {% if form.holder_name.errors %}<ul class="errorlist">{% for e in form.holder_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="form-field">
+        <label for="{{ form.beneficiary_name.id_for_label }}" class="form-label">Beneficia a</label>
+        {{ form.beneficiary_name }}
+        <p class="help-text">Puede ser otra persona; no necesita tener acceso al sistema.</p>
+        {% if form.beneficiary_name.errors %}<ul class="errorlist">{% for e in form.beneficiary_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      <div class="form-field"><label for="{{ form.payment_nature.id_for_label }}" class="form-label">Naturaleza del pago</label>{{ form.payment_nature }}</div>
 
       <!-- Acreedor -->
       <div class="form-field">
@@ -109,7 +130,7 @@
           {{ form.creditor }}
           {% if form.creditor.errors %}<ul class="errorlist">{% for e in form.creditor.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
         </div>
-        <div id="box-new-creditor" style="display:none;background:rgba(0,113,227,0.04);border:1px solid rgba(0,113,227,0.18);border-radius:10px;padding:12px;margin-top:6px;">
+        <div id="box-new-creditor" style="background:rgba(0,113,227,0.04);border:1px solid rgba(0,113,227,0.18);border-radius:10px;padding:12px;margin-top:6px;">
           <div style="margin-bottom:8px;">
             <label for="{{ form.new_creditor_name.id_for_label }}" class="form-label" style="font-size:12px;font-weight:600;">Nombre del nuevo acreedor <span class="text-danger">*</span></label>
             {{ form.new_creditor_name }}
@@ -124,12 +145,17 @@
         </div>
       </div>
 
-      <!-- Código de suministro / cliente -->
-      <div class="form-field">
-        <label for="{{ form.supply_code.id_for_label }}" class="form-label">Código de suministro / Contrato</label>
-        {{ form.supply_code }}
-        {% if form.supply_code.errors %}<ul class="errorlist">{% for e in form.supply_code.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
-        <p class="help-text">Código fijo para pagar en el banco o agentes (Luz, Agua, Gas, Internet, Arbitrios, etc.).</p>
+      <!-- Cuenta de servicio -->
+      <div class="form-field" id="service-account-field">
+        <label for="{{ form.service_account.id_for_label }}" class="form-label">Cuenta de servicio</label>
+        {{ form.service_account }}
+        {% if form.service_account.errors %}<ul class="errorlist">{% for e in form.service_account.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <p class="help-text">Selecciona la cuenta permanente para luz, agua, gas o internet. Los gastos irregulares no requieren una.</p>
+        {% if user.role.code == 'GERENTE' %}
+        <a href="{% url 'payment-service-account-create' %}" class="text-xs">+ Crear cuenta de servicio</a>
+        {% else %}
+        <p class="help-text">Si falta una cuenta, solicite al gerente que la registre.</p>
+        {% endif %}
       </div>
 
       <!-- Período -->
@@ -140,12 +166,14 @@
       </div>
 
       <!-- Monto -->
-      <div class="form-field">
-        <label for="{{ form.amount.id_for_label }}" class="form-label">Monto (S/)</label>
+      <div class="form-field" id="payable-amount-field">
+        <label for="{{ form.amount.id_for_label }}" class="form-label">Monto</label>
         {{ form.amount }}
         {% if form.amount.errors %}<ul class="errorlist">{% for e in form.amount.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
         <p class="help-text">Déjelo vacío si el monto aún no está definido.</p>
       </div>
+
+      <div class="form-field"><label for="{{ form.currency.id_for_label }}" class="form-label">Moneda</label>{{ form.currency }}{% if form.currency.errors %}<ul class="errorlist">{% for e in form.currency.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>
 
       <!-- Vencimiento -->
       <div class="form-field">
@@ -154,10 +182,35 @@
         {% if form.due_date.errors %}<ul class="errorlist">{% for e in form.due_date.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
       </div>
 
+      <div class="form-field"><label for="{{ form.funding_source.id_for_label }}" class="form-label">Fuente de fondos prevista</label>{{ form.funding_source }}<p class="help-text">Puede cambiar al registrar el pago.</p>{% if form.funding_source.errors %}<ul class="errorlist">{% for e in form.funding_source.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>
+
+      <fieldset class="form-field full-width" id="card-fields" style="border:1px solid var(--c-border);border-radius:12px;padding:16px">
+        <legend class="form-label" style="padding:0 6px">Datos del estado de tarjeta</legend>
+        <div class="form-grid">
+          {% for field in form %}{% if field.name == 'card_issuer' or field.name == 'card_last_four' or field.name == 'card_cycle_start' or field.name == 'card_cycle_end' or field.name == 'card_statement_total' or field.name == 'card_minimum_payment' %}<div class="form-field"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}{% endfor %}
+        </div>
+      </fieldset>
+
+      <fieldset class="form-field full-width" id="loan-fields" style="border:1px solid var(--c-border);border-radius:12px;padding:16px">
+        <legend class="form-label" style="padding:0 6px">Datos del préstamo</legend>
+        <div class="form-grid">{% for field in form %}{% if field.name == 'loan_contract' or field.name == 'loan_installment_number' or field.name == 'loan_total_installments' or field.name == 'loan_principal' or field.name == 'loan_interest' or field.name == 'loan_insurance' %}<div class="form-field"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}{% endfor %}</div>
+      </fieldset>
+
+      <fieldset class="form-field full-width" id="insurance-fields" style="border:1px solid var(--c-border);border-radius:12px;padding:16px">
+        <legend class="form-label" style="padding:0 6px">Datos del seguro</legend>
+        <div class="form-grid">{% for field in form %}{% if field.name == 'insurance_policy' or field.name == 'insurance_insured_name' or field.name == 'insurance_start' or field.name == 'insurance_end' or field.name == 'insurance_suspension_risk' %}<div class="form-field"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}{% endfor %}</div>
+      </fieldset>
+
+      <fieldset class="form-field full-width" id="property-fields" style="border:1px solid var(--c-border);border-radius:12px;padding:16px"><legend class="form-label" style="padding:0 6px">Datos de la propiedad</legend><div class="form-grid">{% for field in form %}{% if field.name == 'property_reference' %}<div class="form-field"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}{% endfor %}</div></fieldset>
+
+      <fieldset class="form-field full-width" id="travel-fields" style="border:1px solid var(--c-border);border-radius:12px;padding:16px"><legend class="form-label" style="padding:0 6px">Datos del viaje o evento</legend><div class="form-grid">{% for field in form %}{% if field.name == 'travel_subject' or field.name == 'travel_date' or field.name == 'travel_advance' or field.name == 'travel_balance' %}<div class="form-field"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}{% endfor %}</div></fieldset>
+
+      <fieldset class="form-field full-width" id="investment-fields" style="border:1px solid var(--c-border);border-radius:12px;padding:16px"><legend class="form-label" style="padding:0 6px">Datos de la inversión</legend><div class="form-grid">{% for field in form %}{% if field.name == 'investment_vehicle' or field.name == 'capital_call_reference' or field.name == 'capital_call_deadline' %}<div class="form-field"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}{% endfor %}</div></fieldset>
+
     </div>
 
     <!-- Incompleto checkbox -->
-    <div class="checkbox-row mt-2">
+    <div class="checkbox-row mt-2" id="payable-incomplete-field">
       {{ form.is_incomplete }}
       <label for="{{ form.is_incomplete.id_for_label }}" class="checkbox-label">
         {{ form.is_incomplete.label }}
@@ -166,10 +219,21 @@
     </div>
     {% if form.is_incomplete.errors %}<ul class="errorlist">{% for e in form.is_incomplete.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
 
+    {% if user.role.code == 'GERENTE' %}
+    <div class="checkbox-row mt-2">{{ form.is_sensitive }}<label for="{{ form.is_sensitive.id_for_label }}" class="checkbox-label">Solo el gerente puede ver esta obligación</label></div>
+    {% endif %}
+
+    {% if form.confirm_possible_duplicate.errors or form.non_field_errors %}
+    <div class="card card-padded mt-4" style="background:rgba(255,159,10,.07)">
+      <div class="checkbox-row">{{ form.confirm_possible_duplicate }}<label for="{{ form.confirm_possible_duplicate.id_for_label }}" class="checkbox-label">{{ form.confirm_possible_duplicate.label }}</label></div>
+      <div class="form-field mt-3"><label class="form-label" for="{{ form.duplicate_reason.id_for_label }}">{{ form.duplicate_reason.label }}</label>{{ form.duplicate_reason }}</div>
+    </div>
+    {% endif %}
+
     <div class="form-actions">
       <button type="submit" class="btn btn-primary" id="btn-crear-obligacion">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-        Guardar y continuar
+        {% if editing_payable %}Guardar cambios{% else %}Guardar y continuar{% endif %}
       </button>
       <a href="{% url 'payments-board' %}" class="btn btn-secondary" id="btn-cancelar-obligacion">Cancelar</a>
     </div>
@@ -178,36 +242,91 @@
 
 <script>
 (function() {
+  'use strict';
+  var ui = window.PagoControlForms;
   var toggleBtn = document.getElementById('btn-toggle-creditor');
   var cancelBtn = document.getElementById('btn-cancel-new-creditor');
   var boxExisting = document.getElementById('box-existing-creditor');
   var boxNew = document.getElementById('box-new-creditor');
   var creditorSelect = document.getElementById('{{ form.creditor.id_for_label }}');
   var newCreditorInput = document.getElementById('{{ form.new_creditor_name.id_for_label }}');
+  var category = document.getElementById('{{ form.category.id_for_label }}');
+  var contextSelect = document.getElementById('{{ form.context.id_for_label }}');
+  var incompleteInput = document.getElementById('{{ form.is_incomplete.id_for_label }}');
+  var companyField = document.getElementById('company-field');
+  var branchField = document.getElementById('branch-field');
+  var amountField = document.getElementById('payable-amount-field');
+  var amountInput = document.getElementById('{{ form.amount.id_for_label }}');
+  var serviceAccountField = document.getElementById('service-account-field');
+  var categoryRegions = {
+    CREDIT_CARD: document.getElementById('card-fields'),
+    LOAN: document.getElementById('loan-fields'),
+    INSURANCE: document.getElementById('insurance-fields'),
+    HOUSING: document.getElementById('property-fields'),
+    TRAVEL_EVENT: document.getElementById('travel-fields'),
+    INVESTMENT: document.getElementById('investment-fields')
+  };
+  var requiredByCategory = {
+    CREDIT_CARD: [
+      document.getElementById('{{ form.card_issuer.id_for_label }}'),
+      document.getElementById('{{ form.card_last_four.id_for_label }}'),
+      document.getElementById('{{ form.card_statement_total.id_for_label }}'),
+      document.getElementById('{{ form.card_minimum_payment.id_for_label }}')
+    ],
+    LOAN: [document.getElementById('{{ form.loan_contract.id_for_label }}')],
+    INSURANCE: [document.getElementById('{{ form.insurance_policy.id_for_label }}')],
+    HOUSING: [document.getElementById('{{ form.property_reference.id_for_label }}')],
+    TRAVEL_EVENT: [document.getElementById('{{ form.travel_subject.id_for_label }}')],
+    INVESTMENT: [document.getElementById('{{ form.investment_vehicle.id_for_label }}')]
+  };
 
-  if (toggleBtn && boxExisting && boxNew) {
-    toggleBtn.addEventListener('click', function() {
-      boxExisting.style.display = 'none';
-      boxNew.style.display = 'block';
-      toggleBtn.style.display = 'none';
-      if (creditorSelect) creditorSelect.value = '';
-      if (newCreditorInput) newCreditorInput.focus();
-    });
+  function showNewCreditor(useNew, focusInput) {
+    ui.setRegionVisible(boxExisting, !useNew);
+    ui.setRegionVisible(boxNew, useNew);
+    ui.setRegionVisible(toggleBtn, !useNew);
+    ui.setRequired(creditorSelect, !useNew);
+    ui.setRequired(newCreditorInput, useNew);
+    if (focusInput) {
+      if (useNew && newCreditorInput) newCreditorInput.focus();
+      else if (!useNew && toggleBtn) toggleBtn.focus();
+    }
   }
 
-  if (cancelBtn && boxExisting && boxNew) {
-    cancelBtn.addEventListener('click', function() {
-      boxNew.style.display = 'none';
-      boxExisting.style.display = 'block';
-      if (toggleBtn) toggleBtn.style.display = 'inline-block';
-      if (newCreditorInput) newCreditorInput.value = '';
+  if (toggleBtn) toggleBtn.addEventListener('click', function() { showNewCreditor(true, true); });
+  if (cancelBtn) cancelBtn.addEventListener('click', function() { showNewCreditor(false, true); });
+
+  showNewCreditor({% if form.new_creditor_name.value %}true{% else %}false{% endif %}, false);
+
+  function updateSpecificFields() {
+    if (!category) return;
+    Object.keys(categoryRegions).forEach(function (key) {
+      ui.setRegionVisible(categoryRegions[key], category.value === key);
+    });
+    ui.setRegionVisible(serviceAccountField, category.value === 'SERVICE');
+    ui.setRegionVisible(amountField, Boolean(category.value) && category.value !== 'CREDIT_CARD');
+    var detailsRequired = !(incompleteInput && incompleteInput.checked);
+    ui.setRequired(
+      amountInput,
+      Boolean(category.value) && category.value !== 'CREDIT_CARD' && detailsRequired
+    );
+    Object.keys(requiredByCategory).forEach(function (key) {
+      requiredByCategory[key].forEach(function (control) {
+        ui.setRequired(control, key === category.value && detailsRequired);
+      });
     });
   }
+  if (category) category.addEventListener('change', updateSpecificFields);
+  if (incompleteInput) incompleteInput.addEventListener('change', updateSpecificFields);
+  updateSpecificFields();
 
-  // If there were validation errors on new_creditor_name, show the new creditor box automatically
-  {% if form.new_creditor_name.value %}
-  if (toggleBtn) toggleBtn.click();
-  {% endif %}
+  function updateScopeFields() {
+    if (!contextSelect) return;
+    var isBusiness = ui.selectedData(contextSelect, 'contextKind') === 'BUSINESS';
+    ui.setRegionVisible(companyField, isBusiness);
+    ui.setRegionVisible(branchField, isBusiness);
+  }
+  if (contextSelect) contextSelect.addEventListener('change', updateScopeFields);
+  updateScopeFields();
 })();
 </script>
 

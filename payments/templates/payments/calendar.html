@@ -1,0 +1,25 @@
+{% extends "payments/base.html" %}
+{% load humanize %}
+
+{% block title %}Calendario de obligaciones{% endblock %}
+{% block extra_head %}
+<style>
+  .calendar-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid var(--c-border);border-radius:14px;overflow:hidden;background:var(--c-surface)}.calendar-weekday{padding:10px;text-align:center;font-size:.75rem;font-weight:700;color:var(--c-muted);background:var(--c-bg)}.calendar-day{min-height:124px;padding:9px;border-top:1px solid var(--c-border);border-right:1px solid var(--c-border)}.calendar-day:nth-child(7n){border-right:0}.calendar-day--outside{background:var(--c-bg);color:var(--c-muted)}.calendar-number{font-weight:700;font-size:.8rem}.calendar-event{display:block;margin-top:6px;padding:6px 7px;border-radius:7px;background:rgba(0,113,227,.08);font-size:.72rem;line-height:1.3}.calendar-event strong{display:block}.calendar-list{display:none}@media(max-width:900px){.calendar-grid{display:none}.calendar-list{display:block}.calendar-toolbar{align-items:flex-start;flex-wrap:wrap}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1 class="page-title">Calendario de obligaciones</h1><p class="page-subtitle">Revisa vencimientos y recordatorios internos sin depender de mensajes externos.</p></div></div>
+<div class="calendar-toolbar">
+  <a class="btn btn-secondary" href="?month={{ previous_month|date:'Y-m' }}" aria-label="Ver mes anterior">← Mes anterior</a>
+  <h2 class="section-heading">{{ selected_month|date:"F Y" }}</h2>
+  <a class="btn btn-secondary" href="?month={{ next_month|date:'Y-m' }}" aria-label="Ver mes siguiente">Mes siguiente →</a>
+</div>
+<section class="calendar-grid" aria-label="Calendario mensual">
+  {% for label in "LMMJVSD" %}<div class="calendar-weekday" aria-hidden="true">{{ label }}</div>{% endfor %}
+  {% for week in weeks %}{% for day in week %}<div class="calendar-day{% if not day.in_month %} calendar-day--outside{% endif %}"><span class="calendar-number">{{ day.date|date:"j" }}</span>{% for payable in day.payables %}<a class="calendar-event" href="{% url 'payment-payable-detail' payable.pk %}"><strong>{{ payable.concept }}</strong>{{ payable.context.name }} · {% if payable.balance_due != None %}{{ payable.currency_symbol }} {{ payable.balance_due|floatformat:2|intcomma }}{% else %}Monto por definir{% endif %}</a>{% endfor %}</div>{% endfor %}{% endfor %}
+</section>
+<section class="calendar-list card" aria-label="Vencimientos del mes"><div class="attention-list">{% for payable in payables %}<a class="attention-item" href="{% url 'payment-payable-detail' payable.pk %}"><span class="attention-item__body"><span class="attention-item__title">{{ payable.due_date|date:"d/m" }} · {{ payable.concept }}</span><span class="attention-item__meta">{{ payable.context.name }} · {{ payable.visual_status_label }}</span></span><span class="attention-item__arrow">→</span></a>{% empty %}<p class="card-padded text-muted">No hay vencimientos este mes.</p>{% endfor %}</div></section>
+
+<div class="board-heading"><div><h2>Recordatorios internos</h2><p>Marcarlos no cambia el estado de la obligación.</p></div></div>
+<div class="card card-padded">{% for reminder in reminders %}<div class="attention-item"><span class="attention-item__body"><span class="attention-item__title">{{ reminder.remind_on|date:"d/m" }} · {{ reminder.payable.concept }}</span><span class="attention-item__meta">{{ reminder.payable.context.name }} · {{ reminder.get_status_display }}</span></span>{% if reminder.status == 'ACTIVE' %}<form method="post" action="{% url 'payment-reminder-update' reminder.pk %}" class="flex gap-2">{% csrf_token %}<input type="hidden" name="month" value="{{ selected_month|date:'Y-m' }}"><button class="btn btn-secondary btn-sm" name="status" value="DONE">Atendido</button><button class="btn btn-ghost btn-sm" name="status" value="SKIPPED">Omitir</button></form>{% endif %}</div>{% empty %}<p class="text-muted">No hay recordatorios para este mes.</p>{% endfor %}</div>
+{% endblock %}

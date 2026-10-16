@@ -24,12 +24,18 @@
         {% elif vs == 'DUE_TODAY' %}s-today
         {% elif vs == 'DUE_SOON' %}s-soon
         {% elif vs == 'PAID' %}s-paid
+        {% elif vs == 'PARTIAL' %}s-today
+        {% elif vs == 'DISPUTED' %}s-incomplete
         {% elif vs == 'SUSPENDED' %}s-suspended
         {% else %}s-pending{% endif %}" aria-label="Estado visual">
         {% if vs == 'OVERDUE' %}Vencido
         {% elif vs == 'DUE_TODAY' %}Vence hoy
         {% elif vs == 'DUE_SOON' %}Próximo a vencer
         {% elif vs == 'PAID' %}Pagado
+        {% elif vs == 'PARTIAL' %}Pago parcial
+        {% elif vs == 'DISPUTED' %}En disputa
+        {% elif vs == 'CANCELLED' %}Anulado
+        {% elif vs == 'REFUNDED' %}Reembolsado
         {% elif vs == 'SUSPENDED' %}Suspendido
         {% else %}Pendiente{% endif %}
       </span>
@@ -43,9 +49,12 @@
       <span class="cat-badge cat-{{ payable.category }}">{{ payable.get_category_display }}</span>
     </div>
     <h1 class="page-title">{{ payable.concept }}</h1>
-    <p class="page-subtitle">{{ payable.company.name }}{% if payable.branch %} · {{ payable.branch.name }}{% endif %} · {{ payable.creditor.name }}</p>
+    <p class="page-subtitle">{{ payable.context.name }}{% if payable.branch %} · {{ payable.branch.name }}{% endif %} · {{ payable.creditor.name }}</p>
   </div>
   <div class="page-actions">
+    {% if payable.status == 'PENDING' or payable.status == 'PARTIAL' %}
+    <a href="{% url 'payment-payable-edit' payable.pk %}" class="btn btn-secondary" id="btn-editar-obligacion">Completar datos</a>
+    {% endif %}
     <a href="{% url 'payments-board' %}" class="btn btn-secondary" id="btn-volver-tablero">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
       Tablero
@@ -56,13 +65,28 @@
 <aside class="context-note" aria-label="Siguiente paso recomendado">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v5M12 7h.01"/></svg>
   <span>
-    {% if payable.status == 'PAID' %}<strong>Pago completado:</strong> el comprobante y la trazabilidad quedan disponibles en esta ficha.
+    {% if payable.status == 'PAID' %}<strong>Pago completado:</strong> el comprobante y el historial quedan disponibles en esta ficha.
+    {% elif payable.status == 'PARTIAL' %}<strong>Pago parcial:</strong> todavía queda un saldo por atender; puedes registrar otros abonos.
     {% elif payable.status == 'SUSPENDED' %}<strong>Obligación suspendida:</strong> el gerente puede reactivarla cuando vuelva a ser exigible.
+    {% elif payable.category == 'SERVICE' and not payable.service_account %}<strong>Siguiente paso:</strong> crea y asocia la cuenta de servicio para no volver a repetir el identificador.
     {% elif payable.is_incomplete or not payable.amount %}<strong>Siguiente paso:</strong> completa el monto o el dato pendiente antes de confirmar el pago.
     {% else %}<strong>Siguiente paso:</strong> adjunta el sustento cuando esté disponible y, al ejecutar el pago, registra obligatoriamente su comprobante.
     {% endif %}
   </span>
 </aside>
+
+{% if source_form.errors or payment_form.errors or suspension_form.errors or movement_form.errors or void_form.errors or review_form.errors %}
+<aside id="detail-error-summary" class="context-note" role="alert" tabindex="-1" aria-label="Errores del formulario">
+  <span><strong>Revisa los campos marcados antes de continuar.</strong>
+    {% if source_form.non_field_errors %}{% for error in source_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
+    {% if payment_form.non_field_errors %}{% for error in payment_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
+    {% if suspension_form.non_field_errors %}{% for error in suspension_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
+    {% if movement_form.non_field_errors %}{% for error in movement_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
+    {% if void_form.non_field_errors %}{% for error in void_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
+    {% if review_form.non_field_errors %}{% for error in review_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
+  </span>
+</aside>
+{% endif %}
 
 <!-- Main Detail Grid -->
 <div class="detail-grid">
@@ -76,8 +100,14 @@
       <dl class="dl-grid">
         <dt class="dl-label">Monto</dt>
         <dd class="dl-value fw-700">
-          {% if payable.amount %}S/ {{ payable.amount|floatformat:2 }}{% else %}<span class="text-muted">Por definir</span>{% endif %}
+          {% if payable.amount %}{{ payable.currency_symbol }} {{ payable.amount|floatformat:2 }}{% else %}<span class="text-muted">Por definir</span>{% endif %}
         </dd>
+
+        <dt class="dl-label">Pagado neto</dt>
+        <dd class="dl-value">{{ payable.currency_symbol }} {{ payable.net_paid|floatformat:2 }}</dd>
+
+        <dt class="dl-label">Saldo pendiente</dt>
+        <dd class="dl-value fw-700">{% if payable.balance_due != None %}{{ payable.currency_symbol }} {{ payable.balance_due|floatformat:2 }}{% else %}Por definir{% endif %}</dd>
 
         <dt class="dl-label">Vencimiento</dt>
         <dd class="dl-value">{{ payable.due_date|date:"d/m/Y" }}</dd>
@@ -90,20 +120,78 @@
         <dd class="dl-value mono">{{ payable.external_document_number }}</dd>
         {% endif %}
 
-        {% if payable.supply_code %}
-        <dt class="dl-label">Suministro / Cliente</dt>
-        <dd class="dl-value mono flex items-center gap-2" style="display:flex;align-items:center;gap:8px;">
-          <strong style="color:var(--c-accent,#0071e3);">{{ payable.supply_code }}</strong>
-          <button type="button" class="btn btn-sm btn-secondary" data-copy-value="{{ payable.supply_code }}" style="font-size:11px;padding:2px 8px;">Copiar código</button>
+        {% if payable.service_account %}
+        <dt class="dl-label">Cuenta de servicio</dt>
+        <dd class="dl-value mono"><strong>{{ payable.service_account.masked_primary_identifier }}</strong></dd>
+        <dt class="dl-label">Tipo de servicio</dt>
+        <dd class="dl-value">{{ payable.service_account.get_service_type_display }} · {{ payable.service_account.get_identifier_type_display }}</dd>
+        {% elif payable.category == 'SERVICE' %}
+        <dt class="dl-label">Cuenta de servicio</dt>
+        <dd class="dl-value">
+          {% if user.role.code == 'GERENTE' %}
+          <a href="{% url 'payment-service-account-create' %}?return_payable={{ payable.pk }}" class="btn btn-secondary btn-sm">Crear y asociar cuenta</a>
+          {% else %}
+          <span class="text-muted">Aún no se ha asociado una cuenta; solicite su registro al gerente.</span>
+          {% endif %}
         </dd>
+        {% elif payable.supply_code %}
+        <dt class="dl-label">Código de servicio</dt>
+        <dd class="dl-value mono">{{ payable.masked_supply_code }}</dd>
         {% endif %}
 
         <dt class="dl-label">Acreedor</dt>
         <dd class="dl-value">{{ payable.creditor.name }}</dd>
 
-        {% if payable.destination_account %}
-        <dt class="dl-label">Cuenta destino</dt>
-        <dd class="dl-value mono">{{ payable.destination_account.bank_name }} · {{ payable.destination_account.account_number }}</dd>
+        <dt class="dl-label">Ámbito</dt>
+        <dd class="dl-value">{{ payable.context.name }} · {{ payable.context.get_kind_display }}</dd>
+
+        {% if payable.holder_name %}<dt class="dl-label">Titular o deudor</dt><dd class="dl-value">{{ payable.holder_name }}</dd>{% endif %}
+        {% if payable.beneficiary_name %}<dt class="dl-label">Beneficia a</dt><dd class="dl-value">{{ payable.beneficiary_name }}</dd>{% endif %}
+        <dt class="dl-label">Naturaleza</dt><dd class="dl-value">{{ payable.get_payment_nature_display }}</dd>
+        {% if payable.payment_nature == 'REIMBURSABLE' %}<dt class="dl-label">Reembolso recibido</dt><dd class="dl-value">{{ payable.currency_symbol }} {{ payable.reimbursements_received|floatformat:2 }}</dd><dt class="dl-label">Reembolso pendiente</dt><dd class="dl-value fw-700">{{ payable.currency_symbol }} {{ payable.reimbursement_pending|floatformat:2 }}</dd>{% endif %}
+        {% if payable.funding_source %}
+          {% if user.role.code == 'GERENTE' or payable.funding_source.assistant_visible %}<dt class="dl-label">Fuente prevista</dt><dd class="dl-value">{{ payable.funding_source.name }}</dd>{% endif %}
+        {% endif %}
+
+        {% if payable.category == 'CREDIT_CARD' %}
+          <dt class="dl-label">Tarjeta</dt><dd class="dl-value">{{ payable.details.card_issuer }} · terminación {{ payable.details.card_last_four }}</dd>
+          <dt class="dl-label">Ciclo</dt><dd class="dl-value">{{ payable.details.card_cycle_start|default:"—" }} a {{ payable.details.card_cycle_end|default:"—" }}</dd>
+          <dt class="dl-label">Pago mínimo</dt><dd class="dl-value">{{ payable.currency_symbol }} {{ payable.details.card_minimum_payment|default:"—" }}</dd>
+        {% elif payable.category == 'LOAN' %}
+          <dt class="dl-label">Contrato</dt><dd class="dl-value">{{ payable.details.loan_contract }}</dd>
+          {% if payable.details.loan_installment_number %}<dt class="dl-label">Cuota</dt><dd class="dl-value">{{ payable.details.loan_installment_number }} de {{ payable.details.loan_total_installments|default:"—" }}</dd>{% endif %}
+          {% if payable.details.loan_principal %}<dt class="dl-label">Capital / interés / seguro</dt><dd class="dl-value">{{ payable.details.loan_principal }} / {{ payable.details.loan_interest|default:"0.00" }} / {{ payable.details.loan_insurance|default:"0.00" }}</dd>{% endif %}
+        {% elif payable.category == 'INSURANCE' %}
+          <dt class="dl-label">Póliza</dt><dd class="dl-value">{{ payable.details.insurance_policy }}</dd>
+          {% if payable.details.insurance_insured_name %}<dt class="dl-label">Asegurado</dt><dd class="dl-value">{{ payable.details.insurance_insured_name }}</dd>{% endif %}
+          {% if payable.details.insurance_start %}<dt class="dl-label">Vigencia</dt><dd class="dl-value">{{ payable.details.insurance_start }} a {{ payable.details.insurance_end|default:"—" }}</dd>{% endif %}
+        {% elif payable.category == 'HOUSING' %}
+          <dt class="dl-label">Propiedad</dt><dd class="dl-value">{{ payable.details.property_reference }}</dd>
+        {% elif payable.category == 'TRAVEL_EVENT' %}
+          <dt class="dl-label">Viaje o evento</dt><dd class="dl-value">{{ payable.details.travel_subject }}{% if payable.details.travel_date %} · {{ payable.details.travel_date }}{% endif %}</dd>
+          {% if payable.details.travel_advance %}<dt class="dl-label">Anticipo / saldo</dt><dd class="dl-value">{{ payable.details.travel_advance }} / {{ payable.details.travel_balance|default:"—" }}</dd>{% endif %}
+        {% elif payable.category == 'INVESTMENT' %}
+          <dt class="dl-label">Inversión</dt><dd class="dl-value">{{ payable.details.investment_vehicle }}</dd>
+          {% if payable.details.capital_call_reference %}<dt class="dl-label">Llamada de capital</dt><dd class="dl-value">{{ payable.details.capital_call_reference }}{% if payable.details.capital_call_deadline %} · {{ payable.details.capital_call_deadline }}{% endif %}</dd>{% endif %}
+        {% endif %}
+
+        {% if payable.has_destination_snapshot %}
+        <dt class="dl-label">Cuenta de destino</dt>
+        <dd class="dl-value">{{ payable.destination_bank_name_snapshot }} · {{ payable.destination_account_holder_snapshot }} · <span class="mono">{{ payable.masked_destination_account_number_snapshot }}</span>
+        </dd>
+        {% elif payable.destination_account %}
+        <dt class="dl-label">Cuenta de destino</dt>
+        <dd class="dl-value text-muted">Los datos de pago se mostrarán cuando estén registrados para esta obligación.</dd>
+        {% endif %}
+
+        {% if payable.service_account or payable.has_destination_snapshot %}
+        <dt class="dl-label">Datos de pago</dt>
+        <dd class="dl-value">
+          <form method="post" action="{% url 'payment-instruction-reveal' payable.pk %}" style="display:inline" data-prevent-double-submit>
+            {% csrf_token %}
+            <button type="submit" class="btn btn-secondary btn-sm">Ver instrucción autorizada</button>
+          </form>
+        </dd>
         {% endif %}
 
         <dt class="dl-label">Estado</dt>
@@ -118,12 +206,12 @@
     </div>
 
     <!-- Pago registrado (si ya está pagado) -->
-    {% if payable.status == 'PAID' and payable.payment %}
+    {% if payable.payment %}
     <div class="card card-padded" style="border-color: rgba(48,209,88,0.3); background: rgba(48,209,88,0.05);">
-      <h2 class="section-heading">Pago registrado</h2>
+      <h2 class="section-heading">Último pago registrado</h2>
       <dl class="dl-grid">
         <dt class="dl-label">Monto pagado</dt>
-        <dd class="dl-value fw-700 text-success">S/ {{ payable.payment.amount|floatformat:2 }}</dd>
+        <dd class="dl-value fw-700 text-success">{{ payable.currency_symbol }} {{ payable.payment.amount|floatformat:2 }}</dd>
 
         <dt class="dl-label">Fecha de pago</dt>
         <dd class="dl-value">{{ payable.payment.paid_on|date:"d/m/Y" }}</dd>
@@ -136,27 +224,67 @@
         <dt class="dl-label">Registrado por</dt>
         <dd class="dl-value">{{ payable.payment.registered_by.get_full_name|default:payable.payment.registered_by.username }}</dd>
 
+        {% if payable.has_destination_snapshot %}
+        <dt class="dl-label">Datos de pago</dt>
+        <dd class="dl-value text-muted">Se conservan junto con esta obligación.</dd>
+        {% endif %}
+
         {% if payable.payment.receipt %}
         <dt class="dl-label">Comprobante</dt>
         <dd class="dl-value">
-          <a href="{% url 'payment-attachment-download' payable.payment.receipt.pk %}" class="btn btn-secondary btn-sm" id="btn-descargar-comprobante">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            {{ payable.payment.receipt.original_name }}
-          </a>
+          <div class="stored-document">
+            {% if payable.payment.receipt.preview_type == 'image' %}
+            <a href="{% url 'payment-attachment-preview' payable.payment.receipt.pk %}" class="stored-document__preview" target="_blank" rel="noopener" aria-label="Abrir vista previa de {{ payable.payment.receipt.original_name }}">
+              <img src="{% url 'payment-attachment-preview' payable.payment.receipt.pk %}" alt="Vista previa de {{ payable.payment.receipt.original_name }}" loading="lazy">
+            </a>
+            {% elif payable.payment.receipt.preview_type == 'pdf' %}
+            <div class="stored-document__preview">
+              <iframe src="{% url 'payment-attachment-preview' payable.payment.receipt.pk %}#toolbar=0&navpanes=0&scrollbar=0" title="Vista previa de {{ payable.payment.receipt.original_name }}" loading="lazy" tabindex="-1" aria-hidden="true"></iframe>
+            </div>
+            <a href="{% url 'payment-attachment-preview' payable.payment.receipt.pk %}" class="btn btn-secondary btn-sm" target="_blank" rel="noopener">Abrir vista previa</a>
+            {% endif %}
+            <a href="{% url 'payment-attachment-download' payable.payment.receipt.pk %}" class="btn btn-secondary btn-sm" id="btn-descargar-comprobante">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Descargar {{ payable.payment.receipt.original_name }}
+            </a>
+          </div>
         </dd>
         {% endif %}
       </dl>
     </div>
     {% endif %}
 
+    {% if movements %}
+    <div class="card card-padded" id="movimientos">
+      <h2 class="section-heading">Movimientos</h2>
+      {% for movement in movements %}
+      <div class="audit-entry{% if movement.is_void %} text-muted{% endif %}">
+        <div class="audit-dot"></div>
+        <div class="audit-text"><strong>{{ movement.get_kind_display }}</strong> · {{ payable.currency_symbol }} {{ movement.amount|floatformat:2 }}{% if movement.reason %}<br><span class="text-muted">{{ movement.reason }}</span>{% endif %}{% if movement.receipt %}<br><a href="{% url 'payment-attachment-preview' movement.receipt.pk %}" target="_blank" rel="noopener">Abrir comprobante</a> · <a href="{% url 'payment-attachment-download' movement.receipt.pk %}">Descargar</a>{% endif %}{% if movement.is_void %}<br><span class="text-danger">Anulado: {{ movement.void_reason }}</span>{% endif %}</div>
+        <div class="audit-time">{{ movement.paid_on|date:"d/m/Y" }}{% if user.role.code == 'GERENTE' and not movement.is_void %}<form method="post" action="{% url 'payment-movement-void' payable.pk movement.pk %}" class="mt-1">{% csrf_token %}<input class="control" name="reason" maxlength="280" required placeholder="Motivo de anulación" aria-label="Motivo de anulación"><button class="btn btn-ghost btn-sm" type="submit">Anular</button></form>{% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     <!-- Documentos adjuntos -->
-    {% with sources=payable.attachments.all %}
-    {% if sources %}
+    {% if source_documents %}
     <div class="card card-padded">
       <h2 class="section-heading">Documentos adjuntos</h2>
-      {% for att in sources %}
-      <div class="flex items-center gap-3" style="padding:8px 0;border-bottom:1px solid var(--c-border)">
+      {% for att in source_documents %}
+      <div class="stored-document" style="padding:8px 0;border-bottom:1px solid var(--c-border)">
+        {% if att.preview_type == 'image' %}
+        <a href="{% url 'payment-attachment-preview' att.pk %}" class="stored-document__preview" target="_blank" rel="noopener" aria-label="Abrir vista previa de {{ att.original_name }}">
+          <img src="{% url 'payment-attachment-preview' att.pk %}" alt="Vista previa de {{ att.original_name }}" loading="lazy">
+        </a>
+        {% elif att.preview_type == 'pdf' %}
+        <div class="stored-document__preview">
+          <iframe src="{% url 'payment-attachment-preview' att.pk %}#toolbar=0&navpanes=0&scrollbar=0" title="Vista previa de {{ att.original_name }}" loading="lazy" tabindex="-1" aria-hidden="true"></iframe>
+        </div>
+        <a href="{% url 'payment-attachment-preview' att.pk %}" class="btn btn-secondary btn-sm" target="_blank" rel="noopener">Abrir vista previa</a>
+        {% else %}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-accent);flex-shrink:0" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        {% endif %}
         <div style="flex:1;min-width:0">
           <div class="fw-600 text-sm truncate">{{ att.original_name }}</div>
           <div class="text-xs text-muted">{{ att.get_kind_display }} · {{ att.created_at|date:"d/m/Y H:i" }}</div>
@@ -169,7 +297,6 @@
       {% endfor %}
     </div>
     {% endif %}
-    {% endwith %}
 
   </div>
 
@@ -177,14 +304,15 @@
   <div style="display:flex;flex-direction:column;gap:16px">
 
     <!-- 1. Adjuntar documento por pagar -->
-    {% if payable.status == 'PENDING' %}
+    {% if payable.status == 'PENDING' or payable.status == 'PARTIAL' %}
     <div class="card card-padded">
       <h2 class="section-heading">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         Documento por pagar
       </h2>
-      <form method="post" action="{% url 'payment-source-document' payable.pk %}" enctype="multipart/form-data" id="form-doc-pagar">
+      <form method="post" action="{% url 'payment-source-document' payable.pk %}" enctype="multipart/form-data" id="form-doc-pagar" data-prevent-double-submit>
         {% csrf_token %}
+        {% if source_form.non_field_errors %}<ul class="errorlist non-field-errors" role="alert">{% for error in source_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
         <div class="form-field">
           <label for="{{ source_form.document.id_for_label }}" class="form-label">Adjuntar archivo</label>
           {{ source_form.document }}
@@ -204,20 +332,23 @@
     {% endif %}
 
     <!-- 2. Registrar pago -->
-    {% if payable.status == 'PENDING' %}
+    {% if payable.status == 'PENDING' or payable.status == 'PARTIAL' %}
     <div class="card card-padded" style="border-color:rgba(0,113,227,0.2);background:rgba(0,113,227,0.03)">
       <h2 class="section-heading">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px;color:var(--c-accent)" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
         Registrar pago
       </h2>
-      <form method="post" action="{% url 'payment-record' payable.pk %}" enctype="multipart/form-data" id="form-registrar-pago">
+      {% if has_source_document %}
+      <form method="post" action="{% url 'payment-record' payable.pk %}" enctype="multipart/form-data" id="form-registrar-pago" data-prevent-double-submit>
         {% csrf_token %}
+        {% if payment_form.non_field_errors %}<ul class="errorlist non-field-errors" role="alert">{% for error in payment_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
         <div class="flex-col gap-3" style="display:flex;flex-direction:column;gap:10px">
           <div class="form-field">
-            <label for="{{ payment_form.amount.id_for_label }}" class="form-label">Monto pagado (S/)</label>
+            <label for="{{ payment_form.amount.id_for_label }}" class="form-label">Monto pagado ({{ payable.currency }})</label>
             {{ payment_form.amount }}
             {% if payment_form.amount.errors %}<ul class="errorlist" role="alert">{% for e in payment_form.amount.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
           </div>
+          <div class="form-field"><label for="{{ payment_form.funding_source.id_for_label }}" class="form-label">Fuente de fondos</label>{{ payment_form.funding_source }}{% if payment_form.funding_source.errors %}<ul class="errorlist">{% for e in payment_form.funding_source.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>
           <div class="form-field">
             <label for="{{ payment_form.paid_on.id_for_label }}" class="form-label">Fecha de pago</label>
             {{ payment_form.paid_on }}
@@ -243,20 +374,40 @@
           </button>
         </div>
       </form>
+      {% else %}
+      <p class="help-text" role="alert">Primero adjunta el documento que sustenta esta obligación. Después podrás registrar el pago externo con su comprobante.</p>
+      <a href="#form-doc-pagar" class="btn btn-secondary" style="margin-top:14px">Adjuntar documento de sustento</a>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if user.role.code == 'GERENTE' and movements %}
+    <div class="card card-padded">
+      <h2 class="section-heading">Registrar devolución o corrección</h2>
+      <p class="help-text mb-3">El movimiento anterior permanece en el historial.</p>
+      <form method="post" action="{% url 'payment-movement-record' payable.pk %}">
+        {% csrf_token %}
+        {% for field in movement_form %}<div class="form-field mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>{{ field }}{% if field.errors %}<ul class="errorlist">{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}</div>{% endfor %}
+        <button type="submit" class="btn btn-secondary">Guardar movimiento</button>
+      </form>
     </div>
     {% endif %}
 
     <!-- 3. Suspender / Reactivar (solo gerente) -->
-    {% if user.role.code == 'GERENTE' %}
+    {% if user.role.code == 'GERENTE' and payable.status != 'PAID' and payable.status != 'REFUNDED' %}
     <div class="card card-padded">
-      <h2 class="section-heading">Control de excepción</h2>
+      <h2 class="section-heading">Estado de la obligación</h2>
+      {% if payable.status == 'PENDING' or payable.status == 'PARTIAL' or payable.status == 'SUSPENDED' %}
       <form method="post" action="{% url 'payment-suspension' payable.pk %}" id="form-suspension">
         {% csrf_token %}
+        {% if suspension_form.non_field_errors %}<ul class="errorlist non-field-errors" role="alert">{% for error in suspension_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+        {% if payable.status != 'SUSPENDED' %}
         <div class="form-field">
           <label for="{{ suspension_form.note.id_for_label }}" class="form-label">Motivo</label>
           {{ suspension_form.note }}
           {% if suspension_form.note.errors %}<ul class="errorlist" role="alert">{% for e in suspension_form.note.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
         </div>
+        {% endif %}
         <div style="margin-top:12px">
           {% if payable.status == 'SUSPENDED' %}
           <button type="submit" class="btn btn-success" id="btn-reactivar">
@@ -271,13 +422,22 @@
           {% endif %}
         </div>
       </form>
+      <div class="divider"></div>
+      {% endif %}
+      <form method="post" action="{% url 'payment-review-status' payable.pk %}" id="form-estado-revision">
+        {% csrf_token %}
+        {% if review_form.non_field_errors %}<ul class="errorlist non-field-errors">{% for error in review_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+        <div class="form-field"><label class="form-label" for="{{ review_form.status.id_for_label }}">{{ review_form.status.label }}</label>{{ review_form.status }}</div>
+        <div class="form-field mt-3" id="review-note-field"><label class="form-label" for="{{ review_form.note.id_for_label }}">{{ review_form.note.label }}</label>{{ review_form.note }}{% if review_form.note.errors %}<ul class="errorlist">{% for error in review_form.note.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}</div>
+        <button type="submit" class="btn btn-secondary mt-3">Actualizar estado</button>
+      </form>
     </div>
     {% endif %}
 
-    <!-- 4. Auditoría -->
+    <!-- 4. Actividad -->
     {% if audit_logs %}
     <div class="card card-padded">
-      <h2 class="section-heading">Historial de cambios</h2>
+      <h2 class="section-heading">Actividad</h2>
       {% for log in audit_logs %}
       <div class="audit-entry">
         <div class="audit-dot"></div>
@@ -296,22 +456,20 @@
 
 <script>
 (function() {
-  document.querySelectorAll('[data-copy-value]').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var val = btn.getAttribute('data-copy-value');
-      if (val && navigator.clipboard) {
-        navigator.clipboard.writeText(val).then(function() {
-          var orig = btn.textContent;
-          btn.textContent = '¡Copiado!';
-          btn.style.color = '#34c759';
-          setTimeout(function() {
-            btn.textContent = orig;
-            btn.style.color = '';
-          }, 1800);
-        });
-      }
-    });
-  });
+  var errorSummary = document.getElementById('detail-error-summary');
+  if (errorSummary) errorSummary.focus();
+  var ui = window.PagoControlForms;
+  var reviewStatus = document.getElementById('{{ review_form.status.id_for_label }}');
+  var reviewNote = document.getElementById('{{ review_form.note.id_for_label }}');
+  var reviewNoteField = document.getElementById('review-note-field');
+  function updateReviewNote() {
+    if (!reviewStatus) return;
+    var needsReason = reviewStatus.value === 'DISPUTED' || reviewStatus.value === 'CANCELLED';
+    ui.setRegionVisible(reviewNoteField, needsReason);
+    ui.setRequired(reviewNote, needsReason);
+  }
+  if (reviewStatus) reviewStatus.addEventListener('change', updateReviewNote);
+  updateReviewNote();
 })();
 </script>
 
