@@ -400,8 +400,6 @@ class PaymentCommitmentForm(StyledModelForm):
             source = cleaned.get("funding_source")
             if source and source.context_id != context.pk:
                 self.add_error("funding_source", "Seleccione una fuente del mismo ámbito.")
-            elif source and source.currency != cleaned.get("currency"):
-                self.add_error("funding_source", "Seleccione una fuente en la misma moneda del compromiso.")
 
         # Replicate model-level cross-field rules so the error surfaces
         # in the form before hitting the DB constraint.
@@ -676,7 +674,6 @@ class PayableForm(StyledModelForm):
                 "service_account": selected_commitment.service_account,
                 "period": today.replace(day=1),
                 "amount": selected_commitment.fixed_amount,
-                "currency": selected_commitment.currency,
                 "funding_source": selected_commitment.funding_source,
                 "due_date": today.replace(day=min(due_day, 28)),
                 "is_incomplete": selected_commitment.amount_mode == PaymentCommitment.AmountMode.VARIABLE,
@@ -811,8 +808,6 @@ class PayableForm(StyledModelForm):
             source = cleaned.get("funding_source")
             if source and source.context_id != context.pk:
                 self.add_error("funding_source", "Seleccione una fuente del mismo ámbito.")
-            elif source and source.currency != cleaned.get("currency"):
-                self.add_error("funding_source", "Seleccione una fuente en la misma moneda de la obligación.")
 
         category = cleaned.get("category")
         incomplete = cleaned.get("is_incomplete", False)
@@ -1167,7 +1162,6 @@ class FundingSourceForm(StyledModelForm):
             "institution",
             "account_holder",
             "identifier",
-            "currency",
             "assistant_visible",
             "is_active",
         )
@@ -1184,7 +1178,6 @@ class FundingSourceForm(StyledModelForm):
             "institution": "Banco o institución",
             "account_holder": "Titular",
             "identifier": "Cuenta o identificación",
-            "currency": "Moneda",
             "assistant_visible": "Visible para el asistente",
             "is_active": "Fuente activa",
         }
@@ -1310,11 +1303,7 @@ class PayableFilterForm(forms.Form):
         required=False,
         label="Categoría",
     )
-    currency = forms.ChoiceField(
-        choices=(("", "Todas las monedas"), *FundingSource.Currency.choices),
-        required=False,
-        label="Moneda",
-    )
+
     person = forms.CharField(required=False, max_length=160, label="Titular o beneficiario")
     due_from = forms.DateField(required=False, label="Vence desde", widget=forms.DateInput(attrs={"type": "date"}))
     due_to = forms.DateField(required=False, label="Vence hasta", widget=forms.DateInput(attrs={"type": "date"}))

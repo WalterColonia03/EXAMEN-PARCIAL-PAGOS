@@ -87,4 +87,5 @@ urlpatterns = [
         name="payment-attachment-preview",
     ),
     path("documentos/<int:attachment_id>/descargar/", views.attachment_download, name="payment-attachment-download"),
+    path("documentos/<int:attachment_id>/eliminar/", views.attachment_delete, name="payment-attachment-delete"),
 ]

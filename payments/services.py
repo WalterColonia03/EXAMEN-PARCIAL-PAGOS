@@ -1179,7 +1179,7 @@ def reveal_payment_instruction(*, actor, payable_id: int) -> Payable:
 
 @transaction.atomic
 def set_payable_suspension(*, actor, payable: Payable, suspend: bool, note: str = "") -> Payable:
-    ensure_manager(actor)
+    ensure_payment_user(actor)
     ensure_context_access(actor, payable.context, sensitive=payable.is_sensitive)
     if suspend:
         if payable.status not in {Payable.Status.PENDING, Payable.Status.PARTIAL}:

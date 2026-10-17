@@ -568,7 +568,7 @@ def payment_movement_void(request, payable_id, movement_id):
     return _render_payable_detail(request, payable, void_form=form, status=400)
 
 
-@roles_required(Role.Code.MANAGER)
+@roles_required(*PAYMENT_ROLES)
 @require_POST
 def payable_suspension(request, payable_id):
     payable = get_object_or_404(_payable_queryset(request.user), pk=payable_id)
@@ -1477,3 +1477,42 @@ def attachment_preview(request, attachment_id):
     )
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+@roles_required(*PAYMENT_ROLES)
+@require_POST
+def attachment_delete(request, attachment_id):
+    # Buscamos el adjunto y nos aseguramos de que el usuario tenga permiso
+    attachment = get_object_or_404(Attachment, pk=attachment_id)
+    payable = attachment.payable
+    
+    if not _payable_queryset(request.user).filter(pk=payable.pk).exists():
+        raise Http404("No tiene acceso a este documento.")
+        
+    if attachment.kind != Attachment.Kind.SOURCE:
+        messages.error(request, "Solo se pueden eliminar documentos por pagar. Para los comprobantes, pida al gerente anular el pago.")
+        return redirect("payment-payable-detail", payable_id=payable.pk)
+        
+    if payable.status in {Payable.Status.PAID, Payable.Status.REFUNDED}:
+        messages.error(request, "No se puede eliminar adjuntos de una obligación ya cerrada.")
+        return redirect("payment-payable-detail", payable_id=payable.pk)
+        
+    # Eliminamos el archivo físico y el registro de la base de datos
+    if attachment.file:
+        try:
+            attachment.file.storage.delete(attachment.file.name)
+        except Exception:
+            pass
+    attachment.delete()
+    
+    # Si estaba suspendida, la regresamos a "Pendiente" y la limpiamos
+    if payable.status == Payable.Status.SUSPENDED:
+        payable.status = Payable.Status.PENDING
+        payable.suspension_note = ""
+        payable.suspended_by = None
+        payable.suspended_at = None
+        payable.save(update_fields=("status", "suspension_note", "suspended_by", "suspended_at", "updated_at"))
+        messages.success(request, "Documento eliminado. La obligación volvió a la cola de trabajo.")
+    else:
+        messages.success(request, "Documento adjunto eliminado correctamente.")
+        
+    return redirect("payment-payable-detail", payable_id=payable.pk)

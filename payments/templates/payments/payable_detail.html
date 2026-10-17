@@ -293,6 +293,13 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Descargar
         </a>
+        <!-- Botón para eliminar el adjunto -->
+        <form method="post" action="{% url 'payment-attachment-delete' att.pk %}" style="display:inline;" onsubmit="return confirm('¿Seguro que deseas eliminar este documento?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-danger btn-sm" style="padding: 5px 11px; margin-left: 8px;">
+            Eliminar
+          </button>
+        </form>
       </div>
       {% endfor %}
     </div>
@@ -331,20 +338,19 @@
     </div>
     {% endif %}
 
-    <!-- 2. Registrar pago -->
+<!-- 2. Registrar pago -->
     {% if payable.status == 'PENDING' or payable.status == 'PARTIAL' %}
     <div class="card card-padded" style="border-color:rgba(0,113,227,0.2);background:rgba(0,113,227,0.03)">
       <h2 class="section-heading">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px;color:var(--c-accent)" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
         Registrar pago
       </h2>
-      {% if has_source_document %}
       <form method="post" action="{% url 'payment-record' payable.pk %}" enctype="multipart/form-data" id="form-registrar-pago" data-prevent-double-submit>
         {% csrf_token %}
         {% if payment_form.non_field_errors %}<ul class="errorlist non-field-errors" role="alert">{% for error in payment_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
         <div class="flex-col gap-3" style="display:flex;flex-direction:column;gap:10px">
           <div class="form-field">
-            <label for="{{ payment_form.amount.id_for_label }}" class="form-label">Monto pagado ({{ payable.currency }})</label>
+            <label for="{{ payment_form.amount.id_for_label }}" class="form-label">Monto pagado</label>
             {{ payment_form.amount }}
             {% if payment_form.amount.errors %}<ul class="errorlist" role="alert">{% for e in payment_form.amount.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
           </div>
@@ -367,20 +373,26 @@
             <p class="help-text">Obligatorio · PDF, JPG o PNG — máx. 10 MB</p>
           </div>
         </div>
-        <div style="margin-top:14px">
-          <button type="submit" class="btn btn-primary" style="width:100%" id="btn-confirmar-pago">
+        
+        <!-- Aquí están los dos botones juntos -->
+        <div style="margin-top:14px; display: flex; gap: 10px;">
+          <button type="submit" class="btn btn-primary" style="flex: 1;" id="btn-confirmar-pago">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
             Confirmar pago
           </button>
+          <button type="submit" form="form-suspension" class="btn btn-danger" id="btn-reportar-sin-fondos">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            Sin fondos
+          </button>
         </div>
       </form>
-      {% else %}
-      <p class="help-text" role="alert">Primero adjunta el documento que sustenta esta obligación. Después podrás registrar el pago externo con su comprobante.</p>
-      <a href="#form-doc-pagar" class="btn btn-secondary" style="margin-top:14px">Adjuntar documento de sustento</a>
-      {% endif %}
+      <!-- Formulario oculto para que el asistente pueda reportar falta de fondos -->
+      <form method="post" action="{% url 'payment-suspension' payable.pk %}" id="form-suspension" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="note" value="Reportado por el asistente: Sin fondos en la cuenta al intentar registrar el pago.">
+      </form>
     </div>
     {% endif %}
-
     {% if user.role.code == 'GERENTE' and movements %}
     <div class="card card-padded">
       <h2 class="section-heading">Registrar devolución o corrección</h2>
