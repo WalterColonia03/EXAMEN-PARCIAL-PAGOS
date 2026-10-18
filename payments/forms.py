@@ -22,7 +22,7 @@ from .models import (
 )
 from .services import actor_is_manager, visible_contexts_for
 
-MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
+MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
 ALLOWED_DOCUMENT_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
 
 # Accepted MIME types for <input type="file" accept="...">
@@ -35,7 +35,7 @@ def validate_payment_document(upload) -> None:
     if extension not in ALLOWED_DOCUMENT_EXTENSIONS:
         raise ValidationError("Solo se admiten archivos PDF, JPG o PNG.")
     if upload.size > MAX_DOCUMENT_BYTES:
-        raise ValidationError("El archivo no puede superar los 10 MB.")
+        raise ValidationError("El archivo no puede superar los 4 MB.")
     if upload.size == 0:
         raise ValidationError("El archivo adjunto está vacío.")
 
@@ -277,7 +277,6 @@ class PaymentCommitmentForm(StyledModelForm):
             "usual_due_day",
             "amount_mode",
             "fixed_amount",
-            "currency",
             "funding_source",
             "destination_account",
         )
@@ -307,6 +306,7 @@ class PaymentCommitmentForm(StyledModelForm):
 
     def __init__(self, *args, actor=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.instance.currency = self.instance.currency or FundingSource.Currency.PEN
         contexts = visible_contexts_for(actor).filter(is_active=True) if actor is not None else PaymentContext.objects.filter(is_active=True)
         configure_context_field(self.fields["context"], contexts)
         self.fields["context"].label = "¿A quién corresponde?"
@@ -324,6 +324,7 @@ class PaymentCommitmentForm(StyledModelForm):
         funding_sources = FundingSource.objects.filter(
             is_active=True,
             context_id__in=contexts.values("pk"),
+            currency=self.instance.currency,
         )
         if actor is not None and not actor_is_manager(actor):
             funding_sources = funding_sources.filter(assistant_visible=True)
@@ -400,7 +401,7 @@ class PaymentCommitmentForm(StyledModelForm):
             source = cleaned.get("funding_source")
             if source and source.context_id != context.pk:
                 self.add_error("funding_source", "Seleccione una fuente del mismo ámbito.")
-            elif source and source.currency != cleaned.get("currency"):
+            elif source and source.currency != self.instance.currency:
                 self.add_error("funding_source", "Seleccione una fuente en la misma moneda del compromiso.")
 
         # Replicate model-level cross-field rules so the error surfaces
@@ -626,7 +627,6 @@ class PayableForm(StyledModelForm):
             "external_document_number",
             "period",
             "amount",
-            "currency",
             "due_date",
             "funding_source",
             "is_sensitive",
@@ -683,6 +683,9 @@ class PayableForm(StyledModelForm):
             }
             kwargs["initial"] = initial
         super().__init__(*args, **kwargs)
+        if selected_commitment is not None:
+            self.instance.currency = selected_commitment.currency
+        self.instance.currency = self.instance.currency or FundingSource.Currency.PEN
         contexts = visible_contexts_for(actor).filter(is_active=True) if actor is not None else PaymentContext.objects.filter(is_active=True)
         configure_context_field(self.fields["context"], contexts)
         self.fields["context"].label = "¿A quién corresponde?"
@@ -697,7 +700,9 @@ class PayableForm(StyledModelForm):
             status=ServiceAccount.Status.ACTIVE, context_id__in=contexts.values("pk")
         ).select_related("context", "company", "branch", "creditor")
         funding_sources = FundingSource.objects.filter(
-            is_active=True, context_id__in=contexts.values("pk")
+            is_active=True,
+            context_id__in=contexts.values("pk"),
+            currency=self.instance.currency,
         )
         if actor is not None and not actor_is_manager(actor):
             funding_sources = funding_sources.filter(assistant_visible=True)
@@ -784,6 +789,7 @@ class PayableForm(StyledModelForm):
         commitment = cleaned.get("commitment")
         if commitment is not None:
             context = commitment.context
+            self.instance.currency = commitment.currency
             cleaned["context"] = context
             self.instance.context = context
         if context is None and company is not None:
@@ -811,7 +817,7 @@ class PayableForm(StyledModelForm):
             source = cleaned.get("funding_source")
             if source and source.context_id != context.pk:
                 self.add_error("funding_source", "Seleccione una fuente del mismo ámbito.")
-            elif source and source.currency != cleaned.get("currency"):
+            elif source and source.currency != self.instance.currency:
                 self.add_error("funding_source", "Seleccione una fuente en la misma moneda de la obligación.")
 
         category = cleaned.get("category")
@@ -969,7 +975,7 @@ class RecordPaymentForm(forms.Form):
         super().__init__(*args, **kwargs)
         sources = FundingSource.objects.filter(is_active=True)
         if payable and payable.context_id:
-            sources = sources.filter(context=payable.context)
+            sources = sources.filter(context=payable.context, currency=payable.currency)
         if actor is not None and not actor_is_manager(actor):
             sources = sources.filter(assistant_visible=True)
         self.fields["funding_source"].queryset = sources.select_related("context")
@@ -1044,6 +1050,32 @@ class SuspensionForm(forms.Form):
             "rows": "3",
             "maxlength": "280",
             "placeholder": "Describa brevemente el motivo (opcional, m\u00e1x. 280 caracteres).",
+            "class": "control",
+        }),
+    )
+
+
+class FundsUnavailableReportForm(forms.Form):
+    note = forms.CharField(
+        label="Observación",
+        max_length=280,
+        widget=forms.Textarea(attrs={
+            "rows": "3",
+            "maxlength": "280",
+            "placeholder": "Indique brevemente por qué no hay fondos disponibles.",
+            "class": "control",
+        }),
+    )
+
+
+class AttachmentWithdrawalForm(forms.Form):
+    reason = forms.CharField(
+        label="Motivo del retiro",
+        max_length=280,
+        widget=forms.Textarea(attrs={
+            "rows": "2",
+            "maxlength": "280",
+            "placeholder": "Ej. Se adjuntó el documento equivocado.",
             "class": "control",
         }),
     )
@@ -1167,7 +1199,6 @@ class FundingSourceForm(StyledModelForm):
             "institution",
             "account_holder",
             "identifier",
-            "currency",
             "assistant_visible",
             "is_active",
         )
@@ -1184,13 +1215,13 @@ class FundingSourceForm(StyledModelForm):
             "institution": "Banco o institución",
             "account_holder": "Titular",
             "identifier": "Cuenta o identificación",
-            "currency": "Moneda",
             "assistant_visible": "Visible para el asistente",
             "is_active": "Fuente activa",
         }
 
     def __init__(self, *args, actor=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.instance.currency = self.instance.currency or FundingSource.Currency.PEN
         contexts = visible_contexts_for(actor).filter(is_active=True) if actor is not None else PaymentContext.objects.filter(is_active=True)
         configure_context_field(self.fields["context"], contexts)
         for name in ("institution", "account_holder", "identifier"):
@@ -1297,6 +1328,7 @@ class PayableFilterForm(forms.Form):
         ("", "Todas"),
         ("MISSING_SERVICE_ACCOUNT", "Sin cuenta de servicio"),
         ("MISSING_SOURCE_DOCUMENT", "Sin documento de sustento"),
+        ("FUNDS_UNAVAILABLE", "Falta de fondos reportada"),
         ("INCOMPLETE", "Datos incompletos"),
         ("READY_TO_PAY", "Listas para pagar"),
     )
@@ -1309,11 +1341,6 @@ class PayableFilterForm(forms.Form):
         choices=(("", "Todas las categorías"), *PaymentCommitment.Category.choices),
         required=False,
         label="Categoría",
-    )
-    currency = forms.ChoiceField(
-        choices=(("", "Todas las monedas"), *FundingSource.Currency.choices),
-        required=False,
-        label="Moneda",
     )
     person = forms.CharField(required=False, max_length=160, label="Titular o beneficiario")
     due_from = forms.DateField(required=False, label="Vence desde", widget=forms.DateInput(attrs={"type": "date"}))

@@ -46,13 +46,16 @@
         Información incompleta
       </span>
       {% endif %}
+      {% if payable.funds_unavailable_reported_at %}
+      <span class="status-badge s-overdue">Falta de fondos reportada</span>
+      {% endif %}
       <span class="cat-badge cat-{{ payable.category }}">{{ payable.get_category_display }}</span>
     </div>
     <h1 class="page-title">{{ payable.concept }}</h1>
     <p class="page-subtitle">{{ payable.context.name }}{% if payable.branch %} · {{ payable.branch.name }}{% endif %} · {{ payable.creditor.name }}</p>
   </div>
   <div class="page-actions">
-    {% if payable.status == 'PENDING' or payable.status == 'PARTIAL' %}
+    {% if can_operate_payable and payable.status == 'PENDING' or can_operate_payable and payable.status == 'PARTIAL' %}
     <a href="{% url 'payment-payable-edit' payable.pk %}" class="btn btn-secondary" id="btn-editar-obligacion">Completar datos</a>
     {% endif %}
     <a href="{% url 'payments-board' %}" class="btn btn-secondary" id="btn-volver-tablero">
@@ -65,7 +68,9 @@
 <aside class="context-note" aria-label="Siguiente paso recomendado">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v5M12 7h.01"/></svg>
   <span>
-    {% if payable.status == 'PAID' %}<strong>Pago completado:</strong> el comprobante y el historial quedan disponibles en esta ficha.
+    {% if not can_operate_payable %}<strong>Registro histórico:</strong> esta obligación en USD se conserva solo para consulta; no admite nuevas operaciones ni cambios.
+    {% elif payable.funds_unavailable_reported_at %}<strong>Atención gerencial:</strong> el asistente reportó falta de fondos. La obligación conserva su estado financiero hasta que el gerente atienda el aviso.
+    {% elif payable.status == 'PAID' %}<strong>Pago completado:</strong> el comprobante y el historial quedan disponibles en esta ficha.
     {% elif payable.status == 'PARTIAL' %}<strong>Pago parcial:</strong> todavía queda un saldo por atender; puedes registrar otros abonos.
     {% elif payable.status == 'SUSPENDED' %}<strong>Obligación suspendida:</strong> el gerente puede reactivarla cuando vuelva a ser exigible.
     {% elif payable.category == 'SERVICE' and not payable.service_account %}<strong>Siguiente paso:</strong> crea y asocia la cuenta de servicio para no volver a repetir el identificador.
@@ -75,7 +80,7 @@
   </span>
 </aside>
 
-{% if source_form.errors or payment_form.errors or suspension_form.errors or movement_form.errors or void_form.errors or review_form.errors %}
+{% if source_form.errors or payment_form.errors or suspension_form.errors or movement_form.errors or void_form.errors or review_form.errors or funds_unavailable_form.errors %}
 <aside id="detail-error-summary" class="context-note" role="alert" tabindex="-1" aria-label="Errores del formulario">
   <span><strong>Revisa los campos marcados antes de continuar.</strong>
     {% if source_form.non_field_errors %}{% for error in source_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
@@ -84,6 +89,7 @@
     {% if movement_form.non_field_errors %}{% for error in movement_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
     {% if void_form.non_field_errors %}{% for error in void_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
     {% if review_form.non_field_errors %}{% for error in review_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
+    {% if funds_unavailable_form.non_field_errors %}{% for error in funds_unavailable_form.non_field_errors %}<br>{{ error }}{% endfor %}{% endif %}
   </span>
 </aside>
 {% endif %}
@@ -128,7 +134,9 @@
         {% elif payable.category == 'SERVICE' %}
         <dt class="dl-label">Cuenta de servicio</dt>
         <dd class="dl-value">
-          {% if user.role.code == 'GERENTE' %}
+          {% if not can_operate_payable %}
+          <span class="text-muted">Registro histórico en USD: solo consulta.</span>
+          {% elif user.role.code == 'GERENTE' %}
           <a href="{% url 'payment-service-account-create' %}?return_payable={{ payable.pk }}" class="btn btn-secondary btn-sm">Crear y asociar cuenta</a>
           {% else %}
           <span class="text-muted">Aún no se ha asociado una cuenta; solicite su registro al gerente.</span>
@@ -261,7 +269,7 @@
       <div class="audit-entry{% if movement.is_void %} text-muted{% endif %}">
         <div class="audit-dot"></div>
         <div class="audit-text"><strong>{{ movement.get_kind_display }}</strong> · {{ payable.currency_symbol }} {{ movement.amount|floatformat:2 }}{% if movement.reason %}<br><span class="text-muted">{{ movement.reason }}</span>{% endif %}{% if movement.receipt %}<br><a href="{% url 'payment-attachment-preview' movement.receipt.pk %}" target="_blank" rel="noopener">Abrir comprobante</a> · <a href="{% url 'payment-attachment-download' movement.receipt.pk %}">Descargar</a>{% endif %}{% if movement.is_void %}<br><span class="text-danger">Anulado: {{ movement.void_reason }}</span>{% endif %}</div>
-        <div class="audit-time">{{ movement.paid_on|date:"d/m/Y" }}{% if user.role.code == 'GERENTE' and not movement.is_void %}<form method="post" action="{% url 'payment-movement-void' payable.pk movement.pk %}" class="mt-1">{% csrf_token %}<input class="control" name="reason" maxlength="280" required placeholder="Motivo de anulación" aria-label="Motivo de anulación"><button class="btn btn-ghost btn-sm" type="submit">Anular</button></form>{% endif %}</div>
+        <div class="audit-time">{{ movement.paid_on|date:"d/m/Y" }}{% if can_operate_payable and user.role.code == 'GERENTE' and not movement.is_void %}<form method="post" action="{% url 'payment-movement-void' payable.pk movement.pk %}" class="mt-1">{% csrf_token %}<input class="control" name="reason" maxlength="280" required placeholder="Motivo de anulación" aria-label="Motivo de anulación"><button class="btn btn-ghost btn-sm" type="submit">Anular</button></form>{% endif %}</div>
       </div>
       {% endfor %}
     </div>
@@ -293,6 +301,30 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Descargar
         </a>
+        {% if can_withdraw_source_documents %}
+          {% if user.role.code == 'GERENTE' or att.uploaded_by_id == user.pk %}
+          <form method="post" action="{% url 'payment-source-document-withdraw' payable.pk att.pk %}" style="width:100%;margin-top:8px" onsubmit="return confirm('El documento dejará de usarse como sustento, pero se conservará en el historial. ¿Deseas continuar?');">
+            {% csrf_token %}
+            <label for="withdraw-reason-{{ att.pk }}" class="form-label">Motivo del retiro</label>
+            <textarea id="withdraw-reason-{{ att.pk }}" name="reason" class="control" rows="2" maxlength="280" required placeholder="Ej. Se adjuntó el documento equivocado."></textarea>
+            <button type="submit" class="btn btn-ghost btn-sm" style="margin-top:8px">Retirar sin borrar</button>
+          </form>
+          {% endif %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if withdrawn_source_documents %}
+    <div class="card card-padded">
+      <h2 class="section-heading">Historial de documentos retirados</h2>
+      <p class="help-text mb-3">Estos archivos se conservan como evidencia y ya no habilitan el registro de pagos.</p>
+      {% for att in withdrawn_source_documents %}
+      <div class="audit-entry">
+        <div class="audit-dot"></div>
+        <div class="audit-text"><strong>{{ att.original_name }}</strong><br><span class="text-muted">{{ att.withdrawal_reason }}</span><br><a href="{% url 'payment-attachment-download' att.pk %}">Descargar evidencia</a></div>
+        <div class="audit-time">{{ att.withdrawn_at|date:"d/m/Y H:i" }}<br>{{ att.withdrawn_by.get_short_name|default:att.withdrawn_by.username }}</div>
       </div>
       {% endfor %}
     </div>
@@ -304,7 +336,7 @@
   <div style="display:flex;flex-direction:column;gap:16px">
 
     <!-- 1. Adjuntar documento por pagar -->
-    {% if payable.status == 'PENDING' or payable.status == 'PARTIAL' %}
+    {% if can_operate_payable and payable.status == 'PENDING' or can_operate_payable and payable.status == 'PARTIAL' %}
     <div class="card card-padded">
       <h2 class="section-heading">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -319,7 +351,7 @@
           {% if source_form.document.errors %}
           <ul class="errorlist" role="alert">{% for e in source_form.document.errors %}<li>{{ e }}</li>{% endfor %}</ul>
           {% endif %}
-          <p class="help-text">PDF, JPG o PNG — máx. 10 MB</p>
+          <p class="help-text">PDF, JPG o PNG — máx. 4 MB</p>
         </div>
         <div class="form-actions" style="border:none;padding:0;margin-top:12px">
           <button type="submit" class="btn btn-secondary" id="btn-adjuntar-doc">
@@ -331,8 +363,38 @@
     </div>
     {% endif %}
 
+    <!-- Aviso separado de la suspensión financiera -->
+    {% if payable.funds_unavailable_reported_at %}
+    <div class="card card-padded" style="border-color:rgba(255,149,0,0.35);background:rgba(255,149,0,0.06)">
+      <h2 class="section-heading">Falta de fondos reportada</h2>
+      <p class="text-sm">{{ payable.funds_unavailable_note }}</p>
+      <p class="help-text mt-2">Reportado por {{ payable.funds_unavailable_reported_by.get_short_name|default:payable.funds_unavailable_reported_by.username }} el {{ payable.funds_unavailable_reported_at|date:"d/m/Y H:i" }}. Este aviso no suspende la obligación.</p>
+      {% if can_operate_payable and user.role.code == 'GERENTE' %}
+      <form method="post" action="{% url 'payment-funds-unavailable-resolve' payable.pk %}" class="mt-3" data-prevent-double-submit>
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary">Marcar aviso como atendido</button>
+      </form>
+      {% endif %}
+    </div>
+    {% elif can_operate_payable and user.role.code == 'ASISTENTE' and payable.status != 'PAID' and payable.status != 'SUSPENDED' and payable.status != 'DISPUTED' and payable.status != 'CANCELLED' and payable.status != 'REFUNDED' %}
+    <div class="card card-padded">
+      <h2 class="section-heading">¿No hay fondos disponibles?</h2>
+      <p class="help-text mb-3">Informa al gerente sin suspender ni cambiar el estado financiero de la obligación.</p>
+      <form method="post" action="{% url 'payment-funds-unavailable-report' payable.pk %}" data-prevent-double-submit>
+        {% csrf_token %}
+        {% if funds_unavailable_form.non_field_errors %}<ul class="errorlist non-field-errors" role="alert">{% for error in funds_unavailable_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+        <div class="form-field">
+          <label for="{{ funds_unavailable_form.note.id_for_label }}" class="form-label">{{ funds_unavailable_form.note.label }}</label>
+          {{ funds_unavailable_form.note }}
+          {% if funds_unavailable_form.note.errors %}<ul class="errorlist" role="alert">{% for error in funds_unavailable_form.note.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+        <button type="submit" class="btn btn-secondary mt-3">Reportar falta de fondos</button>
+      </form>
+    </div>
+    {% endif %}
+
     <!-- 2. Registrar pago -->
-    {% if payable.status == 'PENDING' or payable.status == 'PARTIAL' %}
+    {% if can_operate_payable and payable.status == 'PENDING' or can_operate_payable and payable.status == 'PARTIAL' %}
     <div class="card card-padded" style="border-color:rgba(0,113,227,0.2);background:rgba(0,113,227,0.03)">
       <h2 class="section-heading">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px;color:var(--c-accent)" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
@@ -364,7 +426,7 @@
             </label>
             {{ payment_form.receipt }}
             {% if payment_form.receipt.errors %}<ul class="errorlist" role="alert">{% for e in payment_form.receipt.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
-            <p class="help-text">Obligatorio · PDF, JPG o PNG — máx. 10 MB</p>
+            <p class="help-text">Obligatorio · PDF, JPG o PNG — máx. 4 MB</p>
           </div>
         </div>
         <div style="margin-top:14px">
@@ -381,7 +443,7 @@
     </div>
     {% endif %}
 
-    {% if user.role.code == 'GERENTE' and movements %}
+    {% if can_operate_payable and user.role.code == 'GERENTE' and movements %}
     <div class="card card-padded">
       <h2 class="section-heading">Registrar devolución o corrección</h2>
       <p class="help-text mb-3">El movimiento anterior permanece en el historial.</p>
@@ -394,7 +456,7 @@
     {% endif %}
 
     <!-- 3. Suspender / Reactivar (solo gerente) -->
-    {% if user.role.code == 'GERENTE' and payable.status != 'PAID' and payable.status != 'REFUNDED' %}
+    {% if can_operate_payable and user.role.code == 'GERENTE' and payable.status != 'PAID' and payable.status != 'REFUNDED' %}
     <div class="card card-padded">
       <h2 class="section-heading">Estado de la obligación</h2>
       {% if payable.status == 'PENDING' or payable.status == 'PARTIAL' or payable.status == 'SUSPENDED' %}

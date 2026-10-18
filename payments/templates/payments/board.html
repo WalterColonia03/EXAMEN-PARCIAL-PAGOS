@@ -53,6 +53,7 @@
       <span class="cat-badge cat-{{ payable.category }}">{{ payable.get_category_display }}</span>
       {% if payable.is_incomplete %}<span class="status-badge s-incomplete">Datos incompletos</span>{% endif %}
       {% if payable.category == 'SERVICE' and not payable.service_account %}<span class="status-badge s-incomplete">Sin cuenta de servicio</span>{% endif %}
+      {% if payable.funds_unavailable_reported_at %}<span class="status-badge s-overdue">Falta de fondos reportada</span>{% endif %}
       {% if payable.external_document_number %}<span class="task-indicator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>{{ payable.external_document_number }}</span>{% endif %}
     </div>
     <div class="card-org">{{ payable.context.name }}{% if payable.branch %} · {{ payable.branch.name }}{% endif %} · {{ payable.creditor.name }}</div>
@@ -63,10 +64,7 @@
       <span class="card-due">Vence {{ payable.due_date|date:"d/m/Y" }}</span>
     </div>
     <div class="task-indicators" aria-label="Documentos disponibles">
-      {% for att in payable.attachments.all %}
-        {% if att.kind == 'SOURCE' %}<span class="task-indicator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Documento adjunto</span>{% endif %}
-      {% empty %}<span class="task-indicator">Sin documento adjunto</span>
-      {% endfor %}
+      {% if payable.has_active_source_document %}<span class="task-indicator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Documento adjunto</span>{% else %}<span class="task-indicator">Sin documento adjunto</span>{% endif %}
     </div>
     <div class="task-next">
       <span>{% if payable.category == 'SERVICE' and not payable.service_account %}Crea y asocia la cuenta de servicio.{% elif payable.is_incomplete or not payable.amount %}Completa el monto o la información faltante.{% elif vs == 'PARTIAL' %}Registra el siguiente abono o revisa el saldo.{% elif vs == 'OVERDUE' %}Registra el pago y adjunta el comprobante.{% elif vs == 'DUE_TODAY' %}Confirma la ejecución del pago hoy.{% else %}Revisa el detalle y prepara el pago.{% endif %}</span>
@@ -142,7 +140,7 @@
 <details class="filters-details"{% if request.GET %} open{% endif %}>
   <summary>
     <span>Filtros avanzados</span>
-    <small>Ámbito, categoría, moneda, estado y excepción</small>
+    <small>Ámbito, categoría, estado y excepción</small>
   </summary>
   <form method="get" class="filter-bar" role="search" aria-label="Filtros de la cola de trabajo">
     <label for="{{ filter_form.context.id_for_label }}">Ámbito</label>
@@ -153,8 +151,6 @@
     {{ filter_form.branch }}
     <label for="{{ filter_form.category.id_for_label }}">Categoría</label>
     {{ filter_form.category }}
-    <label for="{{ filter_form.currency.id_for_label }}">Moneda</label>
-    {{ filter_form.currency }}
     <label for="{{ filter_form.creditor.id_for_label }}">Acreedor</label>
     {{ filter_form.creditor }}
     <label for="{{ filter_form.person.id_for_label }}">Titular o beneficiario</label>
@@ -173,6 +169,20 @@
     {% if request.GET %}<a href="{% url 'payments-board' %}" class="btn btn-secondary btn-sm" id="btn-limpiar-filtro">Limpiar</a>{% endif %}
   </form>
 </details>
+
+{% if historical_payables %}
+<section class="mt-6" aria-labelledby="historical-payables-title">
+  <div class="board-heading">
+    <div><h2 id="historical-payables-title">Registros históricos en USD</h2><p>Se conservan para consulta y no admiten nuevas operaciones.</p></div>
+    <span class="board-count">{{ historical_payables|length }} registro{{ historical_payables|length|pluralize:"s" }}</span>
+  </div>
+  <div class="attention-list card">
+    {% for payable in historical_payables %}
+    <a class="attention-item" href="{% url 'payment-payable-detail' payable.pk %}"><span class="attention-item__body"><span class="attention-item__title">{{ payable.concept }}</span><span class="attention-item__meta">{{ payable.context.name }} · USD {% if payable.amount %}{{ payable.amount|floatformat:2 }}{% else %}Monto por definir{% endif %} · {{ payable.get_status_display }} · Solo consulta</span></span><span class="attention-item__arrow" aria-hidden="true">→</span></a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 {% if user.role.code == 'GERENTE' and commitments %}
 <section class="mt-6" aria-labelledby="commitments-title">
@@ -204,6 +214,17 @@
         <form method="post" action="{% url 'payment-commitment-toggle' c.pk %}">{% csrf_token %}<input type="hidden" name="activate" value="{% if c.is_active %}0{% else %}1{% endif %}"><button type="submit" class="btn btn-secondary btn-sm">{% if c.is_active %}Desactivar{% else %}Activar{% endif %}</button></form>
       </div>
     </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if user.role.code == 'GERENTE' and historical_commitments %}
+<section class="mt-6" aria-labelledby="historical-commitments-title">
+  <div class="board-heading"><div><h2 id="historical-commitments-title">Compromisos históricos en USD</h2><p>Se muestran sin controles de generación, edición ni cambio de estado.</p></div></div>
+  <div class="card">
+    {% for c in historical_commitments %}
+    <div class="commitment-row inactive"><div class="commitment-info"><div class="commitment-name">{{ c.name }}</div><div class="commitment-sub">{{ c.context.name }}{% if c.branch %} · {{ c.branch.name }}{% endif %} · {{ c.get_frequency_display }} · USD · Solo consulta</div></div></div>
     {% endfor %}
   </div>
 </section>

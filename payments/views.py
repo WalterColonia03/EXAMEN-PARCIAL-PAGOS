@@ -5,7 +5,9 @@ import calendar as month_calendar
 from collections import Counter
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from urllib.parse import quote
 
+from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -22,9 +24,11 @@ from identity.authorization import roles_required
 from identity.models import Role
 
 from .forms import (
+    AttachmentWithdrawalForm,
     BalanceMovementForm,
     DestinationAccountForm,
     FundingSourceForm,
+    FundsUnavailableReportForm,
     MonthlyGenerationForm,
     PayableFilterForm,
     PayableForm,
@@ -60,6 +64,7 @@ from .models import (
     missing_required_payment_details,
 )
 from .services import (
+    actor_is_manager,
     attach_source_document,
     create_commitment,
     create_payable,
@@ -70,6 +75,8 @@ from .services import (
     record_payment,
     record_balance_movement,
     record_audit,
+    report_funds_unavailable,
+    resolve_funds_unavailable,
     reveal_payment_instruction,
     save_funding_source,
     save_payment_context,
@@ -87,6 +94,7 @@ from .services import (
     possible_duplicate_payables,
     visible_contexts_for,
     void_payment_movement,
+    withdraw_source_document,
     skip_next_occurrence,
 )
 
@@ -104,6 +112,7 @@ def _payable_queryset(actor):
         "service_account",
         "destination_account",
         "funding_source",
+        "funds_unavailable_reported_by",
     ).prefetch_related(
         "attachments",
         Prefetch(
@@ -119,12 +128,24 @@ def _apply_exception_filter(queryset, exception: str | None):
     if exception == "MISSING_SERVICE_ACCOUNT":
         return queryset.filter(category=PaymentCommitment.Category.SERVICE, service_account__isnull=True)
     if exception == "MISSING_SOURCE_DOCUMENT":
-        return queryset.exclude(attachments__kind=Attachment.Kind.SOURCE)
+        return queryset.exclude(
+            attachments__in=Attachment.objects.filter(
+                kind=Attachment.Kind.SOURCE,
+                withdrawn_at__isnull=True,
+            )
+        )
+    if exception == "FUNDS_UNAVAILABLE":
+        return queryset.filter(funds_unavailable_reported_at__isnull=False)
     if exception == "INCOMPLETE":
         return queryset.filter(Q(is_incomplete=True) | Q(amount__isnull=True))
     if exception == "READY_TO_PAY":
         return (
-            queryset.filter(amount__isnull=False, is_incomplete=False, attachments__kind=Attachment.Kind.SOURCE)
+            queryset.filter(
+                amount__isnull=False,
+                is_incomplete=False,
+                attachments__kind=Attachment.Kind.SOURCE,
+                attachments__withdrawn_at__isnull=True,
+            )
             .filter(~Q(category=PaymentCommitment.Category.SERVICE) | Q(service_account__isnull=False))
             .distinct()
         )
@@ -193,20 +214,35 @@ def _money_summary(payables, *, remaining_balance: bool = False):
     }
 
 
+def _has_active_source_document(payable: Payable) -> bool:
+    return any(
+        attachment.kind == Attachment.Kind.SOURCE and attachment.withdrawn_at is None
+        for attachment in payable.attachments.all()
+    )
+
+
 @roles_required(*PAYMENT_ROLES)
 @require_GET
 @never_cache
 def board(request):
     filter_form = PayableFilterForm(request.GET or None, actor=request.user)
-    base = _apply_board_filters(_payable_queryset(request.user), filter_form)
+    operational_payables = _payable_queryset(request.user).filter(currency=FundingSource.Currency.PEN)
+    base = _apply_board_filters(operational_payables, filter_form)
     payables = list(urgency_ordered_payables(base))
     queue_payables = list(
-        urgency_ordered_payables(_apply_scope_filters(_payable_queryset(request.user), filter_form))
+        urgency_ordered_payables(_apply_scope_filters(operational_payables, filter_form))
     )
+    historical_payables = list(
+        _payable_queryset(request.user)
+        .exclude(currency=FundingSource.Currency.PEN)
+        .order_by("-due_date", "-pk")[:50]
+    )
+    for payable in (*payables, *queue_payables):
+        payable.has_active_source_document = _has_active_source_document(payable)
     counts = Counter(payable.visual_status() for payable in queue_payables)
     counts["UPCOMING"] = counts["DUE_TODAY"] + counts["DUE_SOON"]
     without_source_document = sum(
-        not any(attachment.kind == Attachment.Kind.SOURCE for attachment in payable.attachments.all())
+        not payable.has_active_source_document
         for payable in queue_payables
     )
     without_service_account = sum(
@@ -217,14 +253,20 @@ def board(request):
     ready_to_pay = sum(
         payable.amount is not None
         and not payable.is_incomplete
-        and any(attachment.kind == Attachment.Kind.SOURCE for attachment in payable.attachments.all())
+        and payable.has_active_source_document
         and (payable.category != PaymentCommitment.Category.SERVICE or payable.service_account_id is not None)
         for payable in queue_payables
     )
     generation_form = MonthlyGenerationForm(initial={"period": timezone.localdate().replace(day=1)})
     commitments = PaymentCommitment.objects.filter(
-        context_id__in=visible_contexts_for(request.user).values("pk")
+        context_id__in=visible_contexts_for(request.user).values("pk"),
+        currency=FundingSource.Currency.PEN,
     ).select_related("context", "company", "branch", "creditor").order_by("is_active", "name")
+    historical_commitments = PaymentCommitment.objects.filter(
+        context_id__in=visible_contexts_for(request.user).values("pk")
+    ).exclude(currency=FundingSource.Currency.PEN).select_related(
+        "context", "company", "branch", "creditor"
+    ).order_by("name")
     return render(
         request,
         "payments/board.html",
@@ -235,6 +277,8 @@ def board(request):
             "generation_form": generation_form,
             "scheduled_through": timezone.localdate() + timedelta(days=30),
             "commitments": commitments,
+            "historical_commitments": historical_commitments,
+            "historical_payables": historical_payables,
             "alert_days": 5,
             "work_summary": {
                 "without_source_document": without_source_document,
@@ -270,6 +314,9 @@ def commitment_edit(request, commitment_id):
         PaymentCommitment.objects.filter(context_id__in=visible_contexts_for(request.user).values("pk")),
         pk=commitment_id,
     )
+    if commitment.currency != FundingSource.Currency.PEN:
+        messages.info(request, "Los compromisos históricos en USD son solo de consulta.")
+        return redirect("payments-board")
     form = PaymentCommitmentForm(request.POST or None, instance=commitment, actor=request.user)
     if request.method == "POST" and form.is_valid():
         try:
@@ -294,8 +341,12 @@ def commitment_toggle(request, commitment_id):
         pk=commitment_id,
     )
     should_activate = request.POST.get("activate") == "1"
-    set_commitment_active(actor=request.user, commitment=commitment, is_active=should_activate)
-    messages.success(request, f"Compromiso {'activado' if should_activate else 'desactivado'} sin borrar su historial.")
+    try:
+        set_commitment_active(actor=request.user, commitment=commitment, is_active=should_activate)
+    except ValidationError as error:
+        messages.error(request, "; ".join(error.messages))
+    else:
+        messages.success(request, f"Compromiso {'activado' if should_activate else 'desactivado'} sin borrar su historial.")
     return redirect("payments-board")
 
 
@@ -375,6 +426,7 @@ def payable_create(request):
             pk=int(commitment_id),
             is_active=True,
             context__is_active=True,
+            currency=FundingSource.Currency.PEN,
             context_id__in=visible_contexts_for(request.user).values("pk"),
         ).first()
     form = PayableForm(request.POST or None, selected_commitment=selected_commitment, actor=request.user)
@@ -394,6 +446,9 @@ def payable_create(request):
 @never_cache
 def payable_edit(request, payable_id):
     payable = get_object_or_404(_payable_queryset(request.user), pk=payable_id)
+    if payable.currency != FundingSource.Currency.PEN:
+        messages.info(request, "Las obligaciones históricas en USD son solo de consulta.")
+        return redirect("payment-payable-detail", payable_id=payable.pk)
     if payable.status not in {Payable.Status.PENDING, Payable.Status.PARTIAL}:
         messages.error(request, "Solo se pueden editar obligaciones abiertas.")
         return redirect("payment-payable-detail", payable_id=payable.pk)
@@ -423,19 +478,43 @@ def _render_payable_detail(
     movement_form=None,
     void_form=None,
     review_form=None,
+    funds_unavailable_form=None,
     status=200,
 ):
     audit_logs = AuditLog.objects.filter(
         target_type="payments.payable", target_id=str(payable.pk)
     ).select_related("actor")[:50]
+    source_documents = payable.attachments.filter(
+        kind=Attachment.Kind.SOURCE,
+        withdrawn_at__isnull=True,
+    ).select_related("uploaded_by")
+    withdrawn_source_documents = (
+        payable.attachments.filter(
+            kind=Attachment.Kind.SOURCE,
+            withdrawn_at__isnull=False,
+        ).select_related("uploaded_by", "withdrawn_by")
+        if actor_is_manager(request.user)
+        else Attachment.objects.none()
+    )
+    has_financial_movements = payable.payment_movements.exists()
+    can_operate_payable = payable.currency == FundingSource.Currency.PEN
     return render(
         request,
         "payments/payable_detail.html",
         {
             "payable": payable,
-            "has_source_document": payable.attachments.filter(kind=Attachment.Kind.SOURCE).exists(),
-            "source_documents": payable.attachments.filter(kind=Attachment.Kind.SOURCE),
+            "has_source_document": source_documents.exists(),
+            "source_documents": source_documents,
+            "withdrawn_source_documents": withdrawn_source_documents,
+            "can_operate_payable": can_operate_payable,
+            "can_withdraw_source_documents": (
+                can_operate_payable
+                and not has_financial_movements
+                and payable.status in {Payable.Status.PENDING, Payable.Status.SUSPENDED}
+                and (actor_is_manager(request.user) or payable.status == Payable.Status.PENDING)
+            ),
             "source_form": source_form or SourceDocumentForm(),
+            "withdrawal_form": AttachmentWithdrawalForm(),
             "payment_form": payment_form or RecordPaymentForm(payable=payable, actor=request.user),
             "suspension_form": suspension_form or SuspensionForm(initial={"note": payable.suspension_note}),
             "movement_form": movement_form or BalanceMovementForm(),
@@ -444,6 +523,7 @@ def _render_payable_detail(
                 payable=payable,
                 initial={"note": payable.suspension_note},
             ),
+            "funds_unavailable_form": funds_unavailable_form or FundsUnavailableReportForm(),
             "movements": payable.payment_movements.select_related(
                 "receipt", "registered_by", "funding_source", "voided_by"
             ).order_by("-paid_on", "-pk"),
@@ -496,6 +576,94 @@ def source_document_upload(request, payable_id):
             messages.success(request, "Documento por pagar adjuntado.")
             return redirect("payment-payable-detail", payable_id=payable.pk)
     return _render_payable_detail(request, payable, source_form=form, status=400)
+
+
+@roles_required(*PAYMENT_ROLES)
+@require_POST
+def source_document_withdraw(request, payable_id, attachment_id):
+    payable = get_object_or_404(_payable_queryset(request.user), pk=payable_id)
+    attachment = get_object_or_404(
+        Attachment,
+        pk=attachment_id,
+        payable=payable,
+        kind=Attachment.Kind.SOURCE,
+    )
+    form = AttachmentWithdrawalForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Indique un motivo válido para retirar el documento.")
+        return redirect("payment-payable-detail", payable_id=payable.pk)
+    was_withdrawn = attachment.withdrawn_at is not None
+    try:
+        withdraw_source_document(
+            actor=request.user,
+            attachment_id=attachment.pk,
+            reason=form.cleaned_data["reason"],
+        )
+    except ValidationError as error:
+        messages.error(request, "; ".join(error.messages))
+    else:
+        messages.success(
+            request,
+            "El documento ya estaba retirado."
+            if was_withdrawn
+            else "Documento retirado sin borrar la evidencia histórica.",
+        )
+    return redirect("payment-payable-detail", payable_id=payable.pk)
+
+
+@roles_required(Role.Code.ASSISTANT)
+@require_POST
+def payable_funds_unavailable_report(request, payable_id):
+    payable = get_object_or_404(_payable_queryset(request.user), pk=payable_id)
+    form = FundsUnavailableReportForm(request.POST)
+    if not form.is_valid():
+        return _render_payable_detail(
+            request,
+            payable,
+            funds_unavailable_form=form,
+            status=400,
+        )
+    was_open = payable.funds_unavailable_reported_at is not None
+    try:
+        report_funds_unavailable(
+            actor=request.user,
+            payable=payable,
+            note=form.cleaned_data["note"],
+        )
+    except ValidationError as error:
+        form.add_error(None, error)
+        return _render_payable_detail(
+            request,
+            payable,
+            funds_unavailable_form=form,
+            status=400,
+        )
+    messages.success(
+        request,
+        "La falta de fondos ya estaba reportada."
+        if was_open
+        else "Falta de fondos reportada al gerente sin suspender la obligación.",
+    )
+    return redirect("payment-payable-detail", payable_id=payable.pk)
+
+
+@roles_required(Role.Code.MANAGER)
+@require_POST
+def payable_funds_unavailable_resolve(request, payable_id):
+    payable = get_object_or_404(_payable_queryset(request.user), pk=payable_id)
+    was_open = payable.funds_unavailable_reported_at is not None
+    try:
+        resolve_funds_unavailable(actor=request.user, payable=payable)
+    except ValidationError as error:
+        messages.error(request, "; ".join(error.messages))
+        return redirect("payment-payable-detail", payable_id=payable.pk)
+    messages.success(
+        request,
+        "Aviso de falta de fondos marcado como atendido."
+        if was_open
+        else "El aviso ya estaba atendido.",
+    )
+    return redirect("payment-payable-detail", payable_id=payable.pk)
 
 
 @roles_required(*PAYMENT_ROLES)
@@ -884,6 +1052,9 @@ def funding_sources(request):
 @never_cache
 def funding_source_edit(request, source_id):
     source = get_object_or_404(FundingSource, pk=source_id)
+    if source.currency != FundingSource.Currency.PEN:
+        messages.info(request, "Las fuentes históricas en USD son solo de consulta.")
+        return redirect("payment-funding-sources")
     form = FundingSourceForm(request.POST or None, instance=source, actor=request.user)
     if request.method == "POST" and form.is_valid():
         try:
@@ -1091,10 +1262,10 @@ def payable_import_template(request):
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="plantilla_obligaciones.csv"'
     response.write(
-        "\ufeffámbito,categoría,concepto,acreedor,documento,período,monto,moneda,vencimiento,titular,beneficiario,naturaleza,sensible\n"
+        "\ufeffámbito,categoría,concepto,acreedor,documento,período,monto,vencimiento,titular,beneficiario,naturaleza,sensible\n"
     )
     response.write(
-        "Personal de Carlos,Tarjeta de crédito,Estado de tarjeta octubre,Banco,EST-001,2026-10-01,850.00,PEN,2026-10-25,Carlos,Carlos,Propio,No\n"
+        "Personal de Carlos,Tarjeta de crédito,Estado de tarjeta octubre,Banco,EST-001,2026-10-01,850.00,2026-10-25,Carlos,Carlos,Propio,No\n"
     )
     return response
 
@@ -1426,10 +1597,16 @@ def _open_private_attachment(actor, attachment_id: int) -> Attachment:
     )
     if not attachment.file:
         raise Http404("El archivo ya no está disponible.")
-    try:
-        attachment.file.open("rb")
-    except FileNotFoundError as error:
-        raise Http404("El archivo ya no está disponible.") from error
+    if attachment.withdrawn_at is not None and not actor_is_manager(actor):
+        raise Http404("El documento ya no está disponible para la operación.")
+    if settings.USE_SUPABASE_STORAGE:
+        if not attachment.file.storage.exists(attachment.file.name):
+            raise Http404("El archivo ya no está disponible.")
+    else:
+        try:
+            attachment.file.open("rb")
+        except FileNotFoundError as error:
+            raise Http404("El archivo ya no está disponible.") from error
     if attachment.payable.is_sensitive:
         record_audit(
             actor,
@@ -1445,6 +1622,14 @@ def _open_private_attachment(actor, attachment_id: int) -> Attachment:
 @require_GET
 def attachment_download(request, attachment_id):
     attachment = _open_private_attachment(request.user, attachment_id)
+    if settings.USE_SUPABASE_STORAGE:
+        disposition = f"attachment; filename*=UTF-8''{quote(attachment.original_name, safe='')}"
+        return redirect(
+            attachment.file.storage.url(
+                attachment.file.name,
+                parameters={"ResponseContentDisposition": disposition},
+            )
+        )
     content_type = attachment.content_type or mimetypes.guess_type(attachment.original_name)[0] or "application/octet-stream"
     return FileResponse(attachment.file, as_attachment=True, filename=attachment.original_name, content_type=content_type)
 
@@ -1469,6 +1654,17 @@ def attachment_preview(request, attachment_id):
         attachment.original_name[attachment.original_name.rfind(".") :].lower(),
         "application/octet-stream",
     )
+    if settings.USE_SUPABASE_STORAGE:
+        disposition = f"inline; filename*=UTF-8''{quote(attachment.original_name, safe='')}"
+        return redirect(
+            attachment.file.storage.url(
+                attachment.file.name,
+                parameters={
+                    "ResponseContentDisposition": disposition,
+                    "ResponseContentType": content_type,
+                },
+            )
+        )
     response = FileResponse(
         attachment.file,
         as_attachment=False,

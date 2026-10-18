@@ -3,9 +3,22 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+_env_path = BASE_DIR / ".env"
+if _env_path.is_file():
+    with open(_env_path, encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if not _line or _line.startswith("#") or "=" not in _line:
+                continue
+            _key, _val = _line.split("=", 1)
+            _key = _key.strip()
+            _val = _val.strip().strip("'\"")
+            os.environ.setdefault(_key, _val)
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "1").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -88,12 +101,30 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+if DATABASE_URL:
+    # Vercel abre conexiones efímeras. Supabase recomienda su pooler de
+    # transacciones para este tipo de runtime, por lo que Django no conserva
+    # conexiones entre invocaciones.
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=0,
+            conn_health_checks=True,
+            ssl_require=True,
+        )
     }
-}
+    DATABASES["default"].setdefault("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"].setdefault("prepare_threshold", None)
+    DATABASES["default"]["OPTIONS"].setdefault("connect_timeout", 10)
+    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 AUTH_USER_MODEL = "identity.Account"
 
@@ -127,15 +158,67 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 MEDIA_ROOT = BASE_DIR / "private_uploads"
 MEDIA_URL = "/media/"
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
-DATA_UPLOAD_MAX_MEMORY_SIZE = 12 * 1024 * 1024
+
+_SUPABASE_STORAGE_ENV = {
+    "bucket_name": os.environ.get("SUPABASE_STORAGE_BUCKET", "").strip(),
+    "endpoint_url": os.environ.get("SUPABASE_S3_ENDPOINT_URL", "").strip(),
+    "region_name": os.environ.get("SUPABASE_S3_REGION", "").strip(),
+    "access_key": os.environ.get("SUPABASE_S3_ACCESS_KEY_ID", "").strip(),
+    "secret_key": os.environ.get("SUPABASE_S3_SECRET_ACCESS_KEY", "").strip(),
+}
+
+USE_SUPABASE_STORAGE = any(_SUPABASE_STORAGE_ENV.values())
+
+if USE_SUPABASE_STORAGE:
+    missing_storage_values = [
+        name for name, value in _SUPABASE_STORAGE_ENV.items() if not value
+    ]
+    if missing_storage_values:
+        raise ImproperlyConfigured(
+            "La configuración de Supabase Storage está incompleta: "
+            + ", ".join(missing_storage_values)
+            + "."
+        )
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                **_SUPABASE_STORAGE_ENV,
+                "addressing_style": "path",
+                "default_acl": None,
+                "file_overwrite": False,
+                "querystring_auth": True,
+                "querystring_expire": int(os.environ.get("SUPABASE_SIGNED_URL_TTL", "60")),
+                "signature_version": "s3v4",
+            },
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+elif not DEBUG:
+    raise ImproperlyConfigured(
+        "Producción requiere Supabase Storage privado para conservar los documentos adjuntos."
+    )
+
+# Vercel Functions limita solicitudes y respuestas a 4.5 MB. Dejamos margen
+# para el contenedor multipart y mantenemos la validación funcional en 4 MB.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 4 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = 4_400_000
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_HSTS_SECONDS", "31536000"))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = os.environ.get("DJANGO_HSTS_PRELOAD", "0").strip() in {"1", "true", "yes", "on"}
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]

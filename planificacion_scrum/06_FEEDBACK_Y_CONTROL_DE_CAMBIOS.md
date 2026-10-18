@@ -158,7 +158,7 @@ La automatización del navegador no continuó porque la herramienta no pudo dete
 
 El cierre automatizado ejecutó `manage.py check`, `makemigrations --check --dry-run`, `git diff --check` y la suite completa: **53 de 53 pruebas aprobadas**.
 
-No se publicó el proyecto ni se conectó GitHub o Jira. Toda la ejecución y documentación de esta sección es local.
+En el corte histórico de esta sección todavía no se había publicado el proyecto ni conectado GitHub o Jira. El estado de conectividad posterior se registra sin reescribir esa evidencia.
 
 ## 2.5 Refinamiento de formularios contextuales · 16/10/2026
 
@@ -198,6 +198,42 @@ La instalación local no dispone de correo saliente verificado y sus direcciones
 
 **Estado:** implementado y verificado automáticamente; revisión visual y ejecución manual del flujo pendientes. La evidencia se conserva en `evidencias/EXP-LAB_RECUPERACION_ACCESO_2026-10-16.md` y no incluye credenciales ni códigos.
 
+## 2.8 Ajuste operativo, integridad documental y producción · 18/10/2026
+
+### CR-006 · Operación PEN, excepciones auditables y persistencia en Supabase
+
+**Origen:** `FB-006`, revisión del PR de ajustes de interfaz y decisión del responsable del producto.
+
+**Clasificación:** Refinamiento funcional, corrección de permisos e integridad y preparación de producción.
+
+**Estado de la línea base:** No modifica ni reabre el Sprint original; cambio posterior del laboratorio.
+
+**Fecha:** 18/10/2026.
+
+**Solicitante:** Responsable del producto / usuario.
+
+**Problema observado:** Ocultar módulos eliminaba consultas necesarias del asistente; convertir «Sin fondos» en suspensión le otorgaba una decisión gerencial; borrar adjuntos destruía trazabilidad; retirar la moneda solo de la interfaz no establecía una regla consistente; SQLite y archivos locales no ofrecen persistencia adecuada en Vercel.
+
+**Resultado esperado:** Las operaciones nuevas usan PEN y el USD anterior queda en consulta de solo lectura; el asistente reporta falta de fondos como excepción auditada sin suspender; solo el gerente suspende/reactiva; un sustento puede retirarse lógicamente y con auditoría antes del primer movimiento, nunca borrarse físicamente; calendario y cuentas de servicio siguen consultables por el asistente; producción usa PostgreSQL y Storage privado de Supabase desde Vercel.
+
+**Historias afectadas:** `HU-PROD-01`, `HU-PROD-04`, `HU-PROD-05`, `HU-PROD-07`, `HU-DOC-01`, `HU-SEC-01`, `EXP-LAB-02`, `EXP-LAB-03`, `EXP-LAB-05`, `EXP-LAB-07`, `EXP-LAB-09`, `EXP-LAB-10` y el nuevo `EXP-LAB-12`.
+
+**Criterios añadidos/eliminados/modificados:** PEN es la única moneda de alta para compromisos, obligaciones, fuentes y movimientos nuevos; USD histórico no se convierte ni edita. Reportar falta de fondos no cambia el estado a `SUSPENDED`. Retirar sustento exige ausencia total de movimientos, motivo y evento de auditoría, conserva archivo/registro y no reactiva automáticamente. Los comprobantes se corrigen mediante el flujo financiero autorizado. La navegación conserva calendario y consulta de cuentas compartidas.
+
+**Impacto técnico:** Reglas de modelo/servicio/formulario, estado de excepción, retiro lógico de adjuntos, auditoría, permisos, migraciones, pruebas de regresión, configuración PostgreSQL y almacenamiento S3 compatible de Supabase.
+
+**Impacto en seguridad y datos:** Impide escalamiento de permisos, destrucción de evidencia y persistencia en disco efímero. Secretos de base y Storage permanecen solo en variables de entorno del servidor; el bucket no es público.
+
+**Estimación anterior:** No aplica; el ajuste no estaba estimado en el Sprint histórico.
+
+**Estimación nueva:** Pendiente de estimación formal; no se inventan Story Points ni horas.
+
+**Trabajo que se retira o pospone:** Altas nuevas en USD, conversión de moneda, borrado físico desde la interfaz y suspensión por parte del asistente.
+
+**Decisión:** Implementado y verificado localmente con evidencia reproducible. No se declara validado por producto ni desplegado hasta completar la prueba manual y la persistencia real en Vercel/Supabase.
+
+**Aprobada por:** Responsable del producto / usuario, 18/10/2026.
+
 ## 3. Versiones de la planificación
 
 | Versión | Fecha | Estado | Descripción | Responsable de aprobación |
@@ -211,6 +247,8 @@ La instalación local no dispone de correo saliente verificado y sus direcciones
 | 0.7 | 16/10/2026 | Verificada técnicamente | Se completó EXP-LAB-10 con formularios contextuales, normalización defensiva y 62 de 62 pruebas aprobadas. La revisión visual manual y aceptación de producto continúan pendientes. | Responsable del producto / usuario pendiente |
 | 0.8 | 16/10/2026 | Lista para validación manual | Se completó el reinicio controlado con respaldo, hashes, conteos, integridad y 62 pruebas aprobadas; se preparó el recorrido Gerente → Asistente → Gerente desde una base operativa vacía. El recorrido manual todavía no fue ejecutado. | Responsable del producto / usuario pendiente |
 | 0.9 | 16/10/2026 | Lista para validación manual | Se corrigió el acceso sin distinción de mayúsculas y se incorporó recuperación local segura con códigos personales y delegación temporal Gerente → Asistente; 78 de 78 pruebas aprobadas. La validación visual permanece pendiente. | Responsable del producto / usuario pendiente |
+| 0.10 | 18/10/2026 | Especificada; verificación pendiente | `CR-006` define operación nueva solo PEN, USD histórico de solo lectura, reporte de falta de fondos separado de suspensión, retiro lógico de sustento, navegación por rol y producción Vercel/Supabase. No se registran pruebas aún. | Responsable del producto / usuario |
+| 0.11 | 18/10/2026 | Verificada técnicamente | `CR-006` se implementó localmente: migración `payments.0010`, reglas PEN/USD, excepción de fondos, retiro lógico, configuración PostgreSQL/Storage y 84 de 84 pruebas aprobadas. Despliegue real y recorrido manual permanecen pendientes. | Responsable del producto / usuario pendiente |
 | 1.0 | — | Pendiente | Versión funcional presentada al profesor. | — |
 | 1.1 | — | Pendiente | Feedback del profesor incorporado y validado. | — |
 | Final-Jira | — | Pendiente | Línea base congelada para preparar un Jira separado. | — |
@@ -224,6 +262,7 @@ La instalación local no dispone de correo saliente verificado y sus direcciones
 | FB-003 | 16/10/2026 | Responsable del producto / usuario | Los formularios deben mostrar únicamente los campos necesarios para la información elegida y evitar controles que no se usarán. | Refinamiento de experiencia e integridad | EXP-LAB-10; futura HU por refinar | Incorporar dentro de CR-005 | Reduce carga visual y evita valores contradictorios sin debilitar la validación del servidor | Sin estimación durante laboratorio | Verificado técnicamente; pendiente de revisión visual y aceptación |
 | FB-004 | 16/10/2026 | Responsable del producto / usuario | Limpiar los datos operativos y probar el sistema desde el inicio simulando primero al gerente, luego al asistente y finalmente al gerente. | Preparación de validación del laboratorio | EXP-LAB-01 a 10; casos de aceptación del documento 10 | Preparar reinicio controlado y guion reproducible | Una base vacía permite comprobar descubribilidad, dependencias, permisos y cierre del ciclo sin apoyarse en datos sembrados | No aplica; no añade alcance funcional | Lista para validación manual; ejecución y aceptación pendientes |
 | FB-005 | 16/10/2026 | Responsable del producto / usuario | El primer ingreso mostró credenciales inválidas y no existía una salida si gerente o asistente olvidaban correo y contraseña. | Corrección y nueva capacidad de seguridad | EXP-LAB-11; futura HU de identidad por refinar | Corregir normalización e implementar recuperación local por códigos de un solo uso | Un error de acceso sin camino de recuperación bloquea todo el producto; el flujo debe evitar enumerar cuentas o crear puertas traseras | Sin estimación durante laboratorio | Verificado automáticamente; pendiente de revisión visual y aceptación |
+| FB-006 | 18/10/2026 | Responsable del producto / usuario | Rehacer de forma coherente los ajustes del PR: simplificar sin ocultar consultas, operar en PEN, reportar falta de fondos sin suspender, corregir sustento sin borrarlo y desplegar con persistencia real. | Refinamiento funcional, permisos, integridad y arquitectura | EXP-LAB-12 y HUs relacionadas | Aceptar como `CR-006` | Separa responsabilidades, conserva evidencia y evita depender de SQLite o archivos efímeros en producción | Pendiente de estimación | Implementado y verificado localmente; despliegue/manual pendientes |
 
 ### Regla especial del laboratorio aprobada con FB-002
 

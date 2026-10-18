@@ -3,8 +3,10 @@
 Esta carpeta es la raíz canónica y autosuficiente del proyecto. No depende de
 ningún archivo ni ruta de otros proyectos.
 
-El prototipo se trabaja de forma local: no está publicado en GitHub y no está
-conectado con Jira. La planificación vigente se conserva en
+El código se mantiene en
+[`WalterColonia03/EXAMEN-PARCIAL-PAGOS`](https://github.com/WalterColonia03/EXAMEN-PARCIAL-PAGOS).
+La publicación en Vercel y la conexión de producción con Supabase continúan
+pendientes de validación. La planificación vigente se conserva en
 `planificacion_scrum/` y solo se transformará en Scrum/Jira después de que el
 responsable del producto acepte el comportamiento experimental.
 
@@ -30,7 +32,9 @@ El servidor local queda disponible en `http://127.0.0.1:8010/`.
 - Los compromisos recurrentes especializados conservan contrato, póliza,
   tarjeta enmascarada, propiedad, viaje o inversión; cada período completa sus
   importes y demás datos variables.
-- PEN y USD separados; una fuente incompatible con la moneda queda bloqueada.
+- Decisión `CR-006`, verificada localmente: las operaciones nuevas usan PEN;
+  los registros históricos en USD quedan en consulta de solo lectura y nunca se
+  mezclan con los totales en PEN.
 - Compromisos únicos o recurrentes, con pausa, omisión y generación idempotente.
 - Pagos completos o parciales, devoluciones, contracargos, ajustes, reembolsos
   y anulaciones conservando el historial.
@@ -51,8 +55,10 @@ gerente haya compartido.
 ## Garantías P0 en validación
 
 - Un pago externo solo puede registrarse cuando la obligación ya tiene un
-  documento de sustento y se adjunta un comprobante válido. El servidor rechaza
-  importes superiores al saldo, monedas incompatibles y estados no operables.
+  documento de sustento y se adjunta un comprobante válido. La regresión previa
+  rechaza importes superiores al saldo y estados no operables. `CR-006` añade
+  altas normalizadas a PEN y la consulta inmutable de los registros USD
+  anteriores.
 - Cada obligación conserva una instantánea inmutable de banco, titular y cuenta
   de destino. La migración `payments.0004_destination_account_snapshots` hace
   backfill con el valor disponible al migrar; no reconstruye valores que ya se
@@ -78,10 +84,11 @@ Para validar el bloque técnico:
 .\.venv\Scripts\python.exe manage.py test
 ```
 
-La validación automatizada cerró con **62 de 62 pruebas aprobadas**. La revisión visual manual de escritorio
-y móvil sigue pendiente porque la herramienta disponible no pudo verificar de
-forma segura la URL de la ventana del navegador; por eso el estado documental es
-`verificado técnicamente`, no `validado por producto`.
+La validación automatizada cerró con **84 de 84 pruebas aprobadas** (incluye
+`CR-006`), además de `check` limpio y `makemigrations --check --dry-run` sin
+cambios. La revisión visual manual y el despliegue real permanecen pendientes;
+por eso el estado sigue siendo `verificado técnicamente`, no `validado por
+producto`.
 
 ## Carga y consulta de archivos
 
@@ -91,6 +98,22 @@ forma segura la URL de la ventana del navegador; por eso el estado documental es
   filas, además del nombre y tamaño, para confirmar la selección antes de importar.
 - Los documentos guardados siguen siendo privados. Solo una persona con sesión
   autorizada puede abrir su vista previa o descargar el archivo.
+
+## Decisión operativa vigente · CR-006
+
+La implementación y pruebas automatizadas locales se registran en
+[`EXP-LAB_CR-006_IMPLEMENTACION_2026-10-18.md`](planificacion_scrum/evidencias/EXP-LAB_CR-006_IMPLEMENTACION_2026-10-18.md).
+La validación manual y el despliegue real aún no se declaran ejecutados:
+
+- el asistente conserva acceso al calendario y consulta las cuentas de servicio
+  compartidas; crear, editar e importar configuración corresponde al gerente;
+- **Reportar falta de fondos** crea una excepción operativa auditada para el
+  gerente y no suspende la obligación; suspender y reactivar siguen siendo
+  decisiones exclusivas del gerente;
+- un documento de sustento equivocado solo puede retirarse lógicamente antes de
+  que exista cualquier movimiento, con motivo, actor y fecha; el archivo y su
+  registro no se borran físicamente, y los comprobantes nunca se retiran por
+  esta vía.
 
 Para reconstruir el entorno en una máquina nueva:
 
@@ -130,15 +153,30 @@ sus códigos personales, la recuperación debe realizarla un operador autorizado
 en el equipo local. La especificación y evidencia están en
 [`planificacion_scrum/evidencias/EXP-LAB_RECUPERACION_ACCESO_2026-10-16.md`](planificacion_scrum/evidencias/EXP-LAB_RECUPERACION_ACCESO_2026-10-16.md).
 
-## Configuración de producción
+## Producción en Vercel y Supabase
 
-Para producción define, como mínimo, estas variables de entorno:
+Producción utilizará PostgreSQL de Supabase y un bucket privado de Supabase
+Storage. No se usará SQLite ni el sistema de archivos efímero de Vercel para
+datos o adjuntos persistentes.
 
-```text
-DJANGO_DEBUG=0
-DJANGO_SECRET_KEY=<clave-larga-y-aleatoria>
-DJANGO_ALLOWED_HOSTS=<dominio-principal>
-```
+Configuración prevista en Vercel:
+
+- Root Directory: `./`.
+- Framework Preset: `Django`.
+- Install Command: `pip install -r requirements.txt`.
+- Build Command y Output Directory: valores predeterminados de Django.
+
+Las variables requeridas están enumeradas, sin secretos reales, en
+`.env.example`: `DJANGO_DEBUG=0`, `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`,
+`DJANGO_CSRF_TRUSTED_ORIGINS`, `DATABASE_URL` y las variables
+`SUPABASE_STORAGE_*`. `DATABASE_URL` debe usar el *Transaction pooler* de
+Supabase con TLS, y el bucket debe permanecer privado. Las migraciones se
+ejecutan como una operación controlada contra PostgreSQL antes de habilitar la
+versión; no se ejecutan de forma concurrente en cada Function de Vercel.
+
+La configuración exacta de Supabase, las variables de Vercel, el primer
+gerente y las comprobaciones posteriores están en
+[`DESPLIEGUE_VERCEL_SUPABASE.md`](DESPLIEGUE_VERCEL_SUPABASE.md).
 
 Con `DJANGO_DEBUG=0`, la aplicación activa HTTPS, cookies seguras y HSTS.
 Define `DJANGO_HSTS_PRELOAD=1` únicamente si el dominio y todos sus
@@ -149,3 +187,6 @@ subdominios cumplen permanentemente los requisitos de la lista HSTS preload.
 La correspondencia entre `EXP-LAB-01` a `EXP-LAB-10`, el código, las pruebas y
 los límites conscientes está en
 `planificacion_scrum/evidencias/EXP-LAB_IMPLEMENTACION_2026-10-16.md`.
+`EXP-LAB-11` mantiene su evidencia de acceso por separado. `EXP-LAB-12` tiene
+evidencia de implementación y pruebas locales, pero no se declara cerrado hasta
+completar despliegue y validación manual.

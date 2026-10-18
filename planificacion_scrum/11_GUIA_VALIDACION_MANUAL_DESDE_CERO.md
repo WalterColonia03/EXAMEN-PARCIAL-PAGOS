@@ -6,7 +6,8 @@ Esta guía permite que el responsable del producto recorra PagoControl como si a
 
 **Estado:** preparada para ejecución manual.  
 **Ejecución manual:** pendiente.  
-**Ámbito:** laboratorio experimental `CR-005`; no modifica el Sprint histórico, no crea Story Points, horas o incidencias Jira y no constituye aceptación del producto.  
+**Ámbito:** laboratorio experimental `CR-005` y adenda `CR-006`; no modifica el Sprint histórico, no crea Story Points, horas o incidencias Jira y no constituye aceptación del producto.
+
 **Evidencia del reinicio:** `evidencias/EXP-LAB_REINICIO_CONTROLADO_2026-10-16.md`.
 **Evidencia de acceso y recuperación:** `evidencias/EXP-LAB_RECUPERACION_ACCESO_2026-10-16.md`.
 
@@ -86,7 +87,9 @@ Si una fecha o etiqueta no coincide literalmente con la interfaz del corte proba
 | Crear, editar o importar cuentas de servicio | Sí | Solo consultar y usar las compartidas |
 | Crear obligaciones manuales en ámbitos accesibles | Sí | Sí |
 | Adjuntar sustento y comprobante | Sí | Sí, en ámbitos compartidos y no sensibles |
+| Retirar lógicamente un sustento antes de cualquier movimiento | Sí | Sí, dentro de su alcance autorizado y con motivo |
 | Registrar un pago realizado fuera de PagoControl | Sí | Sí |
+| Reportar falta de fondos | Puede consultar y resolver | Sí; no suspende la obligación |
 | Suspender, reactivar, anular o corregir movimientos | Sí | No |
 | Consultar información privada o sensible | Sí | No |
 | Importar obligaciones en lote | Sí | No en la variante actual |
@@ -173,7 +176,7 @@ Revisar **Cola operativa**, **Pagos realizados**, **Control gerencial**, **Ámbi
 
 1. Abrir **Fuentes de fondos**.
 2. Añadir `Cuenta familiar de prueba` dentro de `Casa familiar de prueba`.
-3. Seleccionar tipo Cuenta, moneda PEN, `Banco Ficticio`, titular `Carlos Prueba` e identificador `CTA-PRUEBA-9001`.
+3. Seleccionar tipo Cuenta y confirmar que la pantalla muestra PEN como moneda fija; completar `Banco Ficticio`, titular `Carlos Prueba` e identificador `CTA-PRUEBA-9001`.
 4. dejarla activa y visible para el asistente.
 
 **Resultado esperado:** la lista presenta únicamente un identificador enmascarado. Los campos bancarios aparecen porque se eligió Cuenta; al seleccionar Efectivo deberían ocultarse, pero no se cambia el tipo en este recorrido.
@@ -185,7 +188,7 @@ Revisar **Cola operativa**, **Pagos realizados**, **Control gerencial**, **Ámbi
 3. Comprobar que empresa y local permanecen ocultos.
 4. escribir `Electricidad casa familiar - primer recibo`.
 5. elegir **Registrar nuevo acreedor** y usar `Proveedor Eléctrico Ficticio`; el identificador fiscal puede quedar vacío.
-6. indicar titular `Carlos Prueba`, beneficiario `Familiar Prueba`, naturaleza Apoyo no reembolsable, PEN, importe `180,50`, vencimiento `F1` y el período correspondiente a `F0`.
+6. indicar titular `Carlos Prueba`, beneficiario `Familiar Prueba`, naturaleza Apoyo no reembolsable, confirmar la moneda fija PEN, importe `180,50`, vencimiento `F1` y el período correspondiente a `F0`.
 7. seleccionar `Cuenta familiar de prueba` como fuente prevista.
 8. dejar vacía la cuenta de servicio, no marcar la obligación como sensible y guardar.
 
@@ -214,7 +217,7 @@ Revisar **Cola operativa**, **Pagos realizados**, **Control gerencial**, **Ámbi
 1. Elegir **Crear compromiso**.
 2. seleccionar `Casa familiar de prueba`, nombre `Electricidad mensual casa familiar`, categoría Servicio y acreedor `Proveedor Eléctrico Ficticio`.
 3. asociar la cuenta `SUM-PRUEBA-0001`.
-4. seleccionar frecuencia Mensual, inicio `F2`, día habitual 20, monto fijo `180,50`, moneda PEN, fuente `Cuenta familiar de prueba` y la cuenta de destino autorizada.
+4. seleccionar frecuencia Mensual, inicio `F2`, día habitual 20, monto fijo `180,50`, confirmar la moneda fija PEN, fuente `Cuenta familiar de prueba` y la cuenta de destino autorizada.
 5. usar titular `Carlos Prueba`, beneficiario `Familiar Prueba` y naturaleza Apoyo no reembolsable.
 6. guardar sin generar todavía la siguiente obligación.
 
@@ -340,8 +343,22 @@ El recorrido principal cubre el inicio operativo, permisos, sustento, pago, supe
 - seguro con contratante, asegurado y beneficiario diferentes;
 - advertencia de duplicado manual;
 - importación válida y reversión completa de un lote inválido;
-- separación PEN/USD y filtros gerenciales;
+- altas nuevas solo PEN y registros USD históricos separados en solo lectura;
 - transiciones de todos los formularios contextuales en escritorio y a 375 px.
+
+### 8.1 Casos obligatorios añadidos por CR-006
+
+Estos casos no se consideran ejecutados por aparecer en la guía:
+
+| Caso | Actor y pasos mínimos | Resultado esperado | Estado |
+|---|---|---|---|
+| Navegación operativa | Ingresar como asistente y abrir Calendario y Cuentas de servicio | Ambos módulos son visibles; las cuentas compartidas son consultables y no aparecen acciones de crear, editar o importar | Pendiente |
+| Falta de fondos | El asistente reporta la excepción; luego el gerente abre la obligación | El reporte conserva actor/fecha y no cambia a `SUSPENDED`; solo el gerente dispone de suspender/reactivar | Pendiente |
+| Retiro antes de movimiento | Adjuntar un sustento ficticio, retirarlo con motivo y revisar actividad/almacenamiento | Deja de ser sustento activo, pero registro y archivo permanecen; no cambia automáticamente el estado | Pendiente |
+| Retiro después de movimiento | Tras registrar un pago, intentar retirar sustento o comprobante | El servidor rechaza la operación sin escritura lateral; la evidencia permanece accesible | Pendiente |
+| Moneda nueva | Confirmar que los formularios no ofrecen selector; intentar importar USD y enviar un campo USD manipulado | La importación USD se rechaza y ninguna alta nueva persiste USD: el sistema conserva PEN | Pendiente |
+| USD histórico | Cargar una copia controlada con un registro USD anterior y consultarlo | Es visible y separado, pero sus campos financieros no pueden editarse ni reutilizarse para nuevas operaciones | Pendiente |
+| Persistencia productiva | Desplegar en Vercel con PostgreSQL y bucket privado de Supabase; crear un dato y adjunto y forzar una nueva invocación/despliegue | Dato y archivo persisten; el objeto no es público y una sesión sin permiso no puede descargarlo | Pendiente |
 
 ## 9. Registro de incidencias y decisiones
 
@@ -380,6 +397,7 @@ Una incidencia no debe corregirse silenciosamente ni utilizarse para reescribir 
 - [ ] Vio el pago del asistente en panel, detalle e historial.
 - [ ] Generó una sola ocurrencia futura y la segunda ejecución no duplicó.
 - [ ] Suspendió y reactivó sin borrar historia.
+- [ ] Vio el reporte de falta de fondos del asistente y conservó control exclusivo de suspender/reactivar.
 
 ### Asistente
 
@@ -389,6 +407,8 @@ Una incidencia no debe corregirse silenciosamente ni utilizarse para reescribir 
 - [ ] Vio la vista previa pequeña del sustento y del comprobante.
 - [ ] El pago superior al saldo fue rechazado sin crear movimiento.
 - [ ] Registró el pago correcto y observó saldo cero.
+- [ ] Conservó acceso visible a Calendario y Cuentas de servicio sin permisos de mantenimiento.
+- [ ] Reportó falta de fondos sin convertir la obligación en suspendida.
 
 ### Experiencia y cierre
 
@@ -397,6 +417,9 @@ Una incidencia no debe corregirse silenciosamente ni utilizarse para reescribir 
 - [ ] Los estados se entendieron sin depender únicamente del color.
 - [ ] El recorrido se comprobó con teclado y luego a 375 px, o esas revisiones quedaron explícitamente pendientes.
 - [ ] Cada paso tiene resultado observado y evidencia, no solo resultado esperado.
+- [ ] El retiro de sustento fue lógico y auditado; ningún documento o comprobante histórico se borró físicamente.
+- [ ] Ninguna alta nueva persistió USD y la edición del USD histórico fue bloqueada.
+- [ ] PostgreSQL y Storage privado de Supabase conservaron datos y archivos entre invocaciones de Vercel, o esa prueba quedó explícitamente pendiente.
 - [ ] El responsable del producto marcó cada variante como aceptada, reformulada, pospuesta o descartada.
 
 Hasta completar este checklist, el estado correcto es **lista para validación manual**, no `Validada por producto`, no `Done` y no lista para Jira.

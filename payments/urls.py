@@ -29,6 +29,21 @@ urlpatterns = [
         name="payment-instruction-reveal",
     ),
     path("obligaciones/<int:payable_id>/documento/", views.source_document_upload, name="payment-source-document"),
+    path(
+        "obligaciones/<int:payable_id>/documentos/<int:attachment_id>/retirar/",
+        views.source_document_withdraw,
+        name="payment-source-document-withdraw",
+    ),
+    path(
+        "obligaciones/<int:payable_id>/sin-fondos/reportar/",
+        views.payable_funds_unavailable_report,
+        name="payment-funds-unavailable-report",
+    ),
+    path(
+        "obligaciones/<int:payable_id>/sin-fondos/resolver/",
+        views.payable_funds_unavailable_resolve,
+        name="payment-funds-unavailable-resolve",
+    ),
     path("obligaciones/<int:payable_id>/pago/", views.payment_record, name="payment-record"),
     path(
         "obligaciones/<int:payable_id>/movimientos/nuevo/",

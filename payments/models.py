@@ -760,6 +760,15 @@ class Payable(models.Model):
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
     is_incomplete = models.BooleanField(default=False)
     suspension_note = models.CharField(max_length=280, blank=True)
+    funds_unavailable_note = models.CharField(max_length=280, blank=True)
+    funds_unavailable_reported_at = models.DateTimeField(null=True, blank=True)
+    funds_unavailable_reported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="funds_unavailable_reports",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_payables"
     )
@@ -790,6 +799,21 @@ class Payable(models.Model):
                     status__in=("PENDING", "PARTIAL", "PAID", "SUSPENDED", "DISPUTED", "CANCELLED", "REFUNDED")
                 ),
                 name="payment_payable_valid_status",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        funds_unavailable_note="",
+                        funds_unavailable_reported_at__isnull=True,
+                        funds_unavailable_reported_by__isnull=True,
+                    )
+                    | (
+                        ~Q(funds_unavailable_note="")
+                        & Q(funds_unavailable_reported_at__isnull=False)
+                        & Q(funds_unavailable_reported_by__isnull=False)
+                    )
+                ),
+                name="payment_payable_funds_alert_consistent",
             ),
         ]
         verbose_name = "cuenta por pagar"
@@ -992,10 +1016,32 @@ class Attachment(models.Model):
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="uploaded_payment_documents"
     )
+    withdrawn_at = models.DateTimeField(null=True, blank=True)
+    withdrawn_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="withdrawn_payment_documents",
+    )
+    withdrawal_reason = models.CharField(max_length=280, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(withdrawal_reason="", withdrawn_at__isnull=True, withdrawn_by__isnull=True)
+                    | (
+                        ~Q(withdrawal_reason="")
+                        & Q(withdrawn_at__isnull=False)
+                        & Q(withdrawn_by__isnull=False)
+                    )
+                ),
+                name="payment_attachment_withdrawal_consistent",
+            )
+        ]
         verbose_name = "documento de pago"
         verbose_name_plural = "documentos de pago"
 
@@ -1181,6 +1227,9 @@ class AuditLog(models.Model):
         PAYABLE_CREATED = "PAYABLE_CREATED", "Obligación creada"
         PAYABLE_STATUS = "PAYABLE_STATUS", "Estado de obligación cambiado"
         DOCUMENT_UPLOADED = "DOCUMENT_UPLOADED", "Documento adjuntado"
+        DOCUMENT_WITHDRAWN = "DOCUMENT_WITHDRAWN", "Documento retirado"
+        FUNDS_UNAVAILABLE = "FUNDS_UNAVAILABLE", "Falta de fondos reportada"
+        FUNDS_RESOLVED = "FUNDS_RESOLVED", "Falta de fondos resuelta"
         PAYMENT_RECORDED = "PAYMENT_RECORDED", "Pago registrado"
         DESTINATION_ACCOUNT = "DESTINATION_ACCOUNT", "Cuenta de destino actualizada"
         SERVICE_ACCOUNT = "SERVICE_ACCOUNT", "Cuenta de servicio actualizada"

@@ -185,9 +185,10 @@ def parse_payable_import(upload) -> list[dict]:
         category = CATEGORIES.get(_normalized(source.get("category")))
         if _text(source.get("category")) and category is None:
             errors.append("Categoría no reconocida")
-        currency = _text(source.get("currency") or "PEN").upper()
-        if currency not in {"PEN", "USD"}:
-            errors.append("La moneda debe ser PEN o USD")
+        supplied_currency = _text(source.get("currency")).upper()
+        currency = "PEN"
+        if supplied_currency and supplied_currency != currency:
+            errors.append("Las operaciones nuevas solo admiten la moneda PEN")
         amount = _text(source.get("amount"))
         if amount:
             try:

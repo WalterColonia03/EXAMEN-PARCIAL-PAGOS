@@ -95,6 +95,12 @@ def ensure_funding_source_access(
         )
 
 
+def ensure_operational_pen(record) -> None:
+    """Keep legacy non-PEN records available for consultation without reuse."""
+    if getattr(record, "currency", FundingSource.Currency.PEN) != FundingSource.Currency.PEN:
+        raise ValidationError("Los registros históricos en USD son solo de consulta y no admiten operaciones nuevas.")
+
+
 def payable_queryset_for(actor) -> QuerySet[Payable]:
     context_ids = visible_contexts_for(actor).values("pk")
     queryset = Payable.objects.filter(context_id__in=context_ids)
@@ -355,6 +361,9 @@ def possible_duplicate_payables(payable: Payable) -> QuerySet[Payable]:
 @transaction.atomic
 def create_commitment(*, actor, commitment: PaymentCommitment) -> PaymentCommitment:
     ensure_payment_user(actor)
+    # New operational records are standardized in PEN. Historical USD records
+    # remain readable but never become new operational records.
+    commitment.currency = FundingSource.Currency.PEN
     context = _resolve_context(commitment)
     ensure_context_access(actor, context)
     ensure_funding_source_access(
@@ -375,6 +384,8 @@ def create_commitment(*, actor, commitment: PaymentCommitment) -> PaymentCommitm
 def update_commitment(*, actor, commitment: PaymentCommitment) -> PaymentCommitment:
     ensure_payment_user(actor)
     existing = PaymentCommitment.objects.select_for_update().get(pk=commitment.pk)
+    ensure_operational_pen(existing)
+    commitment.currency = existing.currency
     ensure_context_access(actor, existing.context)
     _resolve_new_creditor(commitment)
     _resolve_context(commitment)
@@ -401,6 +412,7 @@ def update_commitment(*, actor, commitment: PaymentCommitment) -> PaymentCommitm
 def set_commitment_paused(*, actor, commitment_id: int, paused: bool) -> PaymentCommitment:
     ensure_manager(actor)
     commitment = PaymentCommitment.objects.select_for_update().select_related("context").get(pk=commitment_id)
+    ensure_operational_pen(commitment)
     ensure_context_access(actor, commitment.context)
     if commitment.frequency == PaymentCommitment.Frequency.ONE_TIME:
         raise ValidationError("Un pago único no tiene recurrencia para pausar.")
@@ -420,6 +432,7 @@ def set_commitment_paused(*, actor, commitment_id: int, paused: bool) -> Payment
 def skip_next_occurrence(*, actor, commitment_id: int, reason: str) -> PaymentCommitment:
     ensure_manager(actor)
     commitment = PaymentCommitment.objects.select_for_update().select_related("context").get(pk=commitment_id)
+    ensure_operational_pen(commitment)
     ensure_context_access(actor, commitment.context)
     reason = (reason or "").strip()
     if not reason:
@@ -485,6 +498,7 @@ def save_service_account(*, actor, account: ServiceAccount) -> ServiceAccount:
 def set_commitment_active(*, actor, commitment: PaymentCommitment, is_active: bool) -> PaymentCommitment:
     ensure_manager(actor)
     commitment = PaymentCommitment.objects.select_for_update().get(pk=commitment.pk)
+    ensure_operational_pen(commitment)
     commitment.is_active = is_active
     commitment.save(update_fields=("is_active", "updated_at"))
     state = "activó" if is_active else "desactivó"
@@ -497,6 +511,7 @@ def create_payable(*, actor, payable: Payable) -> Payable:
     ensure_payment_user(actor)
     _resolve_new_creditor(payable)
     if payable.commitment_id:
+        ensure_operational_pen(payable.commitment)
         if not payable.context_id:
             payable.context = payable.commitment.context
         if not payable.holder_name:
@@ -515,6 +530,8 @@ def create_payable(*, actor, payable: Payable) -> Payable:
             payable.service_account = payable.commitment.service_account
         if not payable.supply_code and payable.commitment.supply_code:
             payable.supply_code = payable.commitment.supply_code
+    else:
+        payable.currency = FundingSource.Currency.PEN
     context = _resolve_context(payable)
     ensure_context_access(actor, context, sensitive=payable.is_sensitive)
     ensure_funding_source_access(
@@ -567,6 +584,8 @@ def update_payable(*, actor, payable: Payable) -> Payable:
     """Allow an operator to complete pending records without rewriting payment history."""
     ensure_payment_user(actor)
     existing = payable_queryset_for(actor).select_for_update().get(pk=payable.pk)
+    ensure_operational_pen(existing)
+    payable.currency = existing.currency
     if existing.status not in {Payable.Status.PENDING, Payable.Status.PARTIAL}:
         raise ValidationError("Solo se pueden editar obligaciones pendientes o parcialmente pagadas.")
     if existing.payment_movements.exists():
@@ -661,6 +680,7 @@ def link_service_account_to_payable(*, actor, payable: Payable, account: Service
     """Resolve a missing-account exception and keep its recurrence rule in sync."""
     ensure_payment_user(actor)
     ensure_context_access(actor, payable.context, sensitive=payable.is_sensitive)
+    ensure_operational_pen(payable)
     if payable.status not in {Payable.Status.PENDING, Payable.Status.PARTIAL}:
         raise ValidationError("Solo se puede asociar una cuenta de servicio a una obligación abierta.")
     if payable.category != PaymentCommitment.Category.SERVICE:
@@ -715,6 +735,7 @@ def generate_monthly_payables(
         is_paused=False,
         context__is_active=True,
         frequency=PaymentCommitment.Frequency.MONTHLY,
+        currency=FundingSource.Currency.PEN,
         context_id__in=visible_contexts_for(actor).values("pk"),
     )
     created: list[Payable] = []
@@ -722,6 +743,7 @@ def generate_monthly_payables(
     for commitment in source:
         if not commitment.is_active or commitment.frequency != PaymentCommitment.Frequency.MONTHLY:
             continue
+        ensure_operational_pen(commitment)
         ensure_context_access(actor, commitment.context)
         if Payable.objects.filter(
             commitment=commitment,
@@ -814,6 +836,7 @@ def generate_scheduled_payables(*, actor, through: date) -> tuple[list[Payable],
         is_paused=False,
         context__is_active=True,
         context_id__in=visible_contexts_for(actor).values("pk"),
+        currency=FundingSource.Currency.PEN,
     ).exclude(frequency=PaymentCommitment.Frequency.ONE_TIME)
     created: list[Payable] = []
     skipped = 0
@@ -891,6 +914,7 @@ def generate_scheduled_payables(*, actor, through: date) -> tuple[list[Payable],
 def attach_source_document(*, actor, payable: Payable, upload) -> Attachment:
     ensure_payment_user(actor)
     ensure_context_access(actor, payable.context, sensitive=payable.is_sensitive)
+    ensure_operational_pen(payable)
     attachment = None
     try:
         attachment = Attachment.objects.create(
@@ -919,6 +943,119 @@ def attach_source_document(*, actor, payable: Payable, upload) -> Attachment:
 
 
 @transaction.atomic
+def withdraw_source_document(*, actor, attachment_id: int, reason: str) -> Attachment:
+    """Retire a mistaken source document without deleting its row or object."""
+    ensure_payment_user(actor)
+    attachment = (
+        Attachment.objects.select_for_update()
+        .select_related("payable__context", "uploaded_by")
+        .get(pk=attachment_id)
+    )
+    payable = attachment.payable
+    ensure_context_access(actor, payable.context, sensitive=payable.is_sensitive)
+    ensure_operational_pen(payable)
+    if attachment.kind != Attachment.Kind.SOURCE:
+        raise ValidationError("Solo se puede retirar un documento de sustento.")
+    if attachment.withdrawn_at is not None:
+        return attachment
+    if payable.payment_movements.exists():
+        raise ValidationError("No se puede retirar evidencia después de registrar un movimiento financiero.")
+    allowed_statuses = (
+        {Payable.Status.PENDING, Payable.Status.SUSPENDED}
+        if actor_is_manager(actor)
+        else {Payable.Status.PENDING}
+    )
+    if payable.status not in allowed_statuses:
+        raise ValidationError("El estado actual no permite retirar el documento.")
+    if not actor_is_manager(actor) and attachment.uploaded_by_id != actor.pk:
+        raise PermissionDenied("El asistente solo puede retirar documentos que él mismo adjuntó.")
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValidationError("Indique el motivo del retiro.")
+
+    attachment.withdrawn_at = timezone.now()
+    attachment.withdrawn_by = actor
+    attachment.withdrawal_reason = reason
+    attachment.save(update_fields=("withdrawn_at", "withdrawn_by", "withdrawal_reason"))
+    record_audit(
+        actor,
+        AuditLog.Action.DOCUMENT_WITHDRAWN,
+        payable,
+        f"Retiró el documento «{attachment.original_name}» sin eliminar la evidencia.",
+        {"attachment_id": attachment.pk, "reason": reason},
+    )
+    return attachment
+
+
+@transaction.atomic
+def report_funds_unavailable(*, actor, payable: Payable, note: str) -> Payable:
+    """Let an assistant raise an audited alert without changing financial status."""
+    ensure_payment_user(actor)
+    if actor_is_manager(actor):
+        raise PermissionDenied("Esta acción corresponde al asistente; el gerente puede resolver el aviso.")
+    payable = payable_queryset_for(actor).select_for_update().get(pk=payable.pk)
+    ensure_context_access(actor, payable.context, sensitive=payable.is_sensitive)
+    ensure_operational_pen(payable)
+    if payable.status not in {Payable.Status.PENDING, Payable.Status.PARTIAL}:
+        raise ValidationError("Solo se puede reportar falta de fondos en una obligación pendiente.")
+    if payable.funds_unavailable_reported_at is not None:
+        return payable
+    note = (note or "").strip()
+    if not note:
+        raise ValidationError("Explique brevemente por qué no hay fondos disponibles.")
+
+    payable.funds_unavailable_note = note
+    payable.funds_unavailable_reported_at = timezone.now()
+    payable.funds_unavailable_reported_by = actor
+    payable.save(
+        update_fields=(
+            "funds_unavailable_note",
+            "funds_unavailable_reported_at",
+            "funds_unavailable_reported_by",
+            "updated_at",
+        )
+    )
+    record_audit(
+        actor,
+        AuditLog.Action.FUNDS_UNAVAILABLE,
+        payable,
+        f"Reportó falta de fondos para «{payable.concept}».",
+        {"note": note},
+    )
+    return payable
+
+
+@transaction.atomic
+def resolve_funds_unavailable(*, actor, payable: Payable) -> Payable:
+    ensure_manager(actor)
+    payable = payable_queryset_for(actor).select_for_update().get(pk=payable.pk)
+    ensure_context_access(actor, payable.context, sensitive=payable.is_sensitive)
+    ensure_operational_pen(payable)
+    if payable.funds_unavailable_reported_at is None:
+        return payable
+    previous_note = payable.funds_unavailable_note
+    payable.funds_unavailable_note = ""
+    payable.funds_unavailable_reported_at = None
+    payable.funds_unavailable_reported_by = None
+    payable.save(
+        update_fields=(
+            "funds_unavailable_note",
+            "funds_unavailable_reported_at",
+            "funds_unavailable_reported_by",
+            "updated_at",
+        )
+    )
+    record_audit(
+        actor,
+        AuditLog.Action.FUNDS_RESOLVED,
+        payable,
+        f"Marcó como atendido el aviso de falta de fondos de «{payable.concept}».",
+        {"previous_note": previous_note},
+    )
+    return payable
+
+
+@transaction.atomic
 def record_payment(
     *,
     actor,
@@ -936,6 +1073,7 @@ def record_payment(
         raise ValidationError("Adjunte el comprobante antes de confirmar el pago.")
     payable = payable_queryset_for(actor).select_for_update().get(pk=payable_id)
     ensure_context_access(actor, payable.context, sensitive=payable.is_sensitive)
+    ensure_operational_pen(payable)
     if payable.status == Payable.Status.PAID or payable.balance_due == Decimal("0.00"):
         raise ValidationError("La obligación ya fue pagada y no admite un segundo pago completo.")
     if payable.status in {
@@ -951,7 +1089,11 @@ def record_payment(
         raise ValidationError("El pago no puede superar el saldo pendiente de la obligación.")
     if not allow_partial and amount != balance_before:
         raise ValidationError("El pago completo debe coincidir con el monto registrado de la obligación.")
-    if not Attachment.objects.filter(payable=payable, kind=Attachment.Kind.SOURCE).exists():
+    if not Attachment.objects.filter(
+        payable=payable,
+        kind=Attachment.Kind.SOURCE,
+        withdrawn_at__isnull=True,
+    ).exists():
         raise ValidationError("Adjunte el documento de sustento antes de registrar el pago.")
 
     receipt = None
@@ -991,11 +1133,33 @@ def record_payment(
         payment.save()
         remaining = balance_before - amount
         payable.status = Payable.Status.PAID if remaining == Decimal("0.00") else Payable.Status.PARTIAL
+        funds_alert_was_open = payable.funds_unavailable_reported_at is not None
+        funds_alert_note = payable.funds_unavailable_note
         payable.suspension_note = ""
         payable.suspended_by = None
         payable.suspended_at = None
-        payable.save(update_fields=("status", "suspension_note", "suspended_by", "suspended_at", "updated_at"))
+        payable.funds_unavailable_note = ""
+        payable.funds_unavailable_reported_at = None
+        payable.funds_unavailable_reported_by = None
+        payable.save(update_fields=(
+            "status",
+            "suspension_note",
+            "suspended_by",
+            "suspended_at",
+            "funds_unavailable_note",
+            "funds_unavailable_reported_at",
+            "funds_unavailable_reported_by",
+            "updated_at",
+        ))
         _sync_default_reminder(actor=actor, payable=payable)
+        if funds_alert_was_open:
+            record_audit(
+                actor,
+                AuditLog.Action.FUNDS_RESOLVED,
+                payable,
+                f"El pago atendió el aviso de falta de fondos de «{payable.concept}».",
+                {"previous_note": funds_alert_note, "resolution": "payment"},
+            )
         record_audit(
             actor,
             AuditLog.Action.PAYMENT_RECORDED,
@@ -1052,6 +1216,7 @@ def record_balance_movement(
     """Append a correction/refund without deleting or rewriting previous evidence."""
     ensure_manager(actor)
     payable = payable_queryset_for(actor).select_for_update().get(pk=payable_id)
+    ensure_operational_pen(payable)
     if payable.status in {Payable.Status.CANCELLED, Payable.Status.REFUNDED}:
         raise ValidationError("Una obligación cerrada no admite movimientos nuevos.")
     if kind not in {
@@ -1124,6 +1289,7 @@ def void_payment_movement(*, actor, movement_id: int, reason: str) -> Payment:
     ensure_manager(actor)
     movement = Payment.objects.select_for_update().select_related("payable__context").get(pk=movement_id)
     ensure_context_access(actor, movement.payable.context, sensitive=movement.payable.is_sensitive)
+    ensure_operational_pen(movement.payable)
     reason = (reason or "").strip()
     if not reason:
         raise ValidationError("Indique el motivo de la anulación.")
@@ -1181,6 +1347,7 @@ def reveal_payment_instruction(*, actor, payable_id: int) -> Payable:
 def set_payable_suspension(*, actor, payable: Payable, suspend: bool, note: str = "") -> Payable:
     ensure_manager(actor)
     ensure_context_access(actor, payable.context, sensitive=payable.is_sensitive)
+    ensure_operational_pen(payable)
     if suspend:
         if payable.status not in {Payable.Status.PENDING, Payable.Status.PARTIAL}:
             raise ValidationError("Solo una obligación pendiente puede suspenderse.")
@@ -1209,6 +1376,7 @@ def set_payable_suspension(*, actor, payable: Payable, suspend: bool, note: str 
 def set_payable_review_status(*, actor, payable: Payable, status: str, note: str) -> Payable:
     ensure_manager(actor)
     ensure_context_access(actor, payable.context, sensitive=payable.is_sensitive)
+    ensure_operational_pen(payable)
     if status not in {Payable.Status.PENDING, Payable.Status.DISPUTED, Payable.Status.CANCELLED}:
         raise ValidationError("Seleccione un estado de revisión válido.")
     note = (note or "").strip()
@@ -1337,6 +1505,9 @@ def save_payment_context(*, actor, context: PaymentContext) -> PaymentContext:
 def save_funding_source(*, actor, source: FundingSource) -> FundingSource:
     ensure_manager(actor)
     previous = FundingSource.objects.select_for_update().filter(pk=source.pk).first() if source.pk else None
+    if previous:
+        ensure_operational_pen(previous)
+    source.currency = previous.currency if previous else FundingSource.Currency.PEN
     if previous and (
         previous.context_id != source.context_id
         or previous.currency != source.currency
@@ -1373,6 +1544,7 @@ def set_reminder_status(*, actor, reminder_id: int, status: str) -> InternalRemi
     ensure_payment_user(actor)
     reminder = InternalReminder.objects.select_for_update().select_related("payable__context").get(pk=reminder_id)
     ensure_context_access(actor, reminder.payable.context, sensitive=reminder.payable.is_sensitive)
+    ensure_operational_pen(reminder.payable)
     if status not in {InternalReminder.Status.DONE, InternalReminder.Status.SKIPPED}:
         raise ValidationError("Seleccione un resultado válido para el recordatorio.")
     reminder.status = status

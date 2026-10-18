@@ -347,7 +347,7 @@ La importación de cuentas de servicio acepta solo CSV UTF-8 y XLSX dentro de su
 
 ## Regla de uso
 
-Los siguientes elementos describen comportamientos que el responsable del producto autorizó **solo para prototipado experimental** mediante `CR-005`. Fueron especificados antes de programarse y el corte técnico del 16/10/2026 se registra a continuación. No tienen MoSCoW, Story Points, horas, responsable, Sprint ni clave Jira. Si el prototipo es aprobado, deberán convertirse después en HUs refinadas y estimadas sin reescribir el Sprint original.
+Los siguientes elementos describen comportamientos que el responsable del producto autorizó **solo para prototipado experimental** mediante `CR-005` y `CR-006`. Fueron especificados antes de programarse. No tienen MoSCoW, Story Points, horas, responsable, Sprint ni clave Jira. Si el prototipo es aprobado, deberán convertirse después en HUs refinadas y estimadas sin reescribir el Sprint original.
 
 | ID | Capacidad experimental | Origen | Estado |
 |---|---|---|---|
@@ -361,8 +361,9 @@ Los siguientes elementos describen comportamientos que el responsable del produc
 | EXP-LAB-08 | Importar obligaciones a una bandeja de revisión | Ramp/Zoho; MEJ-INV-011 | Verificada parcialmente — gerente y archivo transitorio |
 | EXP-LAB-09 | Consultar actividad, filtros y dashboard multidimensional | Stampli/Alegra/Odoo; MEJ-INV-007/008/012 | Verificada parcialmente — actividad reciente no paginada |
 | EXP-LAB-10 | Completar formularios contextuales sin campos innecesarios | FB-003; MEJ-INV-024; CR-005 | Verificada técnicamente — pendiente de validación de producto |
+| EXP-LAB-12 | Ajustar operación PEN, excepciones, documentos, navegación y persistencia productiva | FB-006; MEJ-INV-025; CR-006 | Verificada técnicamente en local — despliegue y validación de producto pendientes |
 
-La evidencia exacta, las pruebas y las variaciones deliberadas se encuentran en `evidencias/EXP-LAB_IMPLEMENTACION_2026-10-16.md`. Las diferencias de EXP-LAB-06 a 09 no se ocultan: necesitan decisión del responsable del producto antes de convertir estos experimentos en HUs definitivas.
+La evidencia del corte anterior se encuentra en `evidencias/EXP-LAB_IMPLEMENTACION_2026-10-16.md`. La evidencia local de `EXP-LAB-12` está en `evidencias/EXP-LAB_CR-006_IMPLEMENTACION_2026-10-18.md`; despliegue real y recorrido manual siguen pendientes.
 
 ## EXP-LAB-01 · Ámbitos y partes de una obligación
 
@@ -399,7 +400,7 @@ La evidencia exacta, las pruebas y las variaciones deliberadas se encuentran en 
 2. El formulario debe usar revelado progresivo y mostrar campos especializados solo cuando correspondan.
 3. Una tarjeta debe guardar emisor, titular, últimos cuatro dígitos, ciclo, fecha de corte, vencimiento, total, mínimo y monto elegido.
 4. El prototipo inicial debe representar una obligación por estado de cuenta y evitar contar nuevamente cada compra incluida.
-5. Cada obligación y cada movimiento deben guardar moneda; importes de monedas distintas no se suman sin tipo de cambio explícito y fechado.
+5. Cada obligación y cada movimiento deben guardar moneda. Desde `CR-006`, las altas nuevas usan PEN; los registros USD anteriores se conservan en solo lectura y sus importes nunca se mezclan con PEN.
 
 ## EXP-LAB-04 · Recurrencias flexibles
 
@@ -493,3 +494,18 @@ La evidencia exacta, las pruebas y las variaciones deliberadas se encuentran en 
 9. La validación del servidor y las reglas de autorización siguen siendo obligatorias; el comportamiento visual no las reemplaza.
 
 La especificación completa, las reglas transversales y la secuencia de experimentos se mantienen en `10_PLAN_EXPERIMENTAL_PROTOTIPO.md`.
+
+## EXP-LAB-12 · Ajuste operativo y persistencia productiva
+
+**Descripción experimental:** como gerente y asistente quiero operar con reglas simples y trazables en producción, para atender excepciones y corregir documentos sin perder historia ni asumir permisos que no corresponden.
+
+### Criterios de experimento
+
+1. Compromisos, obligaciones, fuentes y movimientos nuevos se registran solo en PEN; los datos USD existentes permanecen consultables, separados y sin edición financiera.
+2. El asistente puede reportar falta de fondos con actor, fecha y observación, pero esa acción no suspende ni reactiva la obligación. Solo el gerente decide esas transiciones.
+3. Un documento fuente puede retirarse lógicamente solo antes de cualquier movimiento, con motivo y auditoría. Se conserva el archivo y el registro; los comprobantes no se retiran por este flujo.
+4. El asistente conserva Calendario y Cuentas de servicio en consulta y uso de registros compartidos. Crear, editar, importar o administrar configuración corresponde al gerente.
+5. Producción usa PostgreSQL de Supabase y un bucket privado de Supabase Storage; Vercel no conserva datos ni adjuntos en su disco efímero.
+6. Deben existir pruebas negativas de permisos, inmutabilidad USD, retiro posterior a movimientos, acceso privado a archivos y persistencia sobre PostgreSQL/Storage antes de declarar la capacidad verificada.
+
+**Estado:** implementada y verificada localmente mediante `CR-006`, migración `payments.0010` y 84 pruebas automatizadas aprobadas. Despliegue con PostgreSQL/Storage reales y validación manual por roles pendientes.

@@ -6,7 +6,7 @@
 
 Esta carpeta pertenece exclusivamente al sistema de control de pagos de la carpeta local `PROYECTO PARCIAL`. No reemplaza, reutiliza ni modifica la planificación existente del proyecto de minimarket.
 
-**Aclaración de conectividad:** este trabajo permanece local. No se publicó en GitHub, no se configuró un repositorio remoto y no se conectó una cuenta de Jira. El uso local de comandos de control de versiones sirve únicamente para revisar diferencias antes de entregar.
+**Aclaración de conectividad vigente:** el código se mantiene en el repositorio GitHub `WalterColonia03/EXAMEN-PARCIAL-PAGOS`. Jira continúa sin conectarse y el despliegue Vercel/Supabase permanece pendiente de validación. Las evidencias fechadas que indican que no existía un remoto describen correctamente aquel corte histórico y no se reescriben.
 
 La documentación se actualizará mientras se construye y valida el sistema. Cuando el profesor revise la versión funcional:
 
@@ -16,7 +16,7 @@ La documentación se actualizará mientras se construye y valida el sistema. Cua
 4. se congelará una versión final de la planificación;
 5. recién entonces se preparará la carga a un proyecto Jira separado.
 
-Desde el 15/10/2026 existe además un **laboratorio experimental de producto** autorizado mediante `CR-005`. Su objetivo es probar, cambiar y descartar ideas hasta que el responsable del producto considere que PagoControl representa correctamente obligaciones empresariales, personales, familiares y patrimoniales. Este laboratorio:
+Desde el 15/10/2026 existe además un **laboratorio experimental de producto** autorizado mediante `CR-005`; `CR-006`, del 18/10/2026, añade el ajuste operativo y la arquitectura Vercel/Supabase sin reabrir el Sprint histórico. Su objetivo es probar, cambiar y descartar ideas hasta que el responsable del producto considere que PagoControl representa correctamente su trabajo. Este laboratorio:
 
 - se documenta en `10_PLAN_EXPERIMENTAL_PROTOTIPO.md`;
 - no modifica el Sprint único ni sus historias, puntos, fechas, horas o estados;
@@ -39,13 +39,14 @@ No se deben inventar fechas, estados `Done`, worklogs ni evidencias retroactivas
 | `07_VISION_RECUPERADA_Y_HU_DE_PRODUCTO.md` | Visión recuperada del producto, HUs funcionales adaptadas y relación con el backlog original. No altera compromisos del Sprint por sí sola. |
 | `08_INVESTIGACION_DE_REFERENTES_Y_BENCHMARK.md` | Fuente `INV-001`: referentes investigados, aprendizajes y límites de interpretación. |
 | `09_MATRIZ_DE_MEJORAS_Y_TRAZABILIDAD.md` | Registro `MEJ-INV`: decisión, prioridad, relación con HUs, evidencia requerida y estado de cada mejora derivada de la investigación. |
-| `10_PLAN_EXPERIMENTAL_PROTOTIPO.md` | Especificación trazable del laboratorio `CR-005`: dominio ampliado, reglas, flujos, pantallas, experimentos y puertas de validación, sin SP, horas ni Jira. |
+| `10_PLAN_EXPERIMENTAL_PROTOTIPO.md` | Especificación trazable del laboratorio `CR-005` y la adenda `CR-006`: dominio, reglas, flujos, pantallas, producción y puertas de validación, sin SP, horas ni Jira. |
 | `11_GUIA_VALIDACION_MANUAL_DESDE_CERO.md` | Recorrido reproducible Gerente → Asistente → Gerente desde una base operativa vacía; define datos ficticios, resultados esperados y checklist, sin afirmar su ejecución. |
 | `evidencias/INV-001_investigacion_sistemas_similares.md` | Ficha de integridad y procedencia de la investigación entregada por el usuario. |
 | `evidencias/INV-002_ambitos_personales_familiares_y_patrimoniales.md` | Investigación de casos personales, familiares, patrimoniales y excepciones financieras que fundamenta `CR-005`. |
 | `evidencias/EXP-LAB_IMPLEMENTACION_2026-10-16.md` | Evidencia técnica del prototipo: correspondencia EXP-LAB, pruebas, decisiones conscientes y validaciones pendientes. |
 | `evidencias/EXP-LAB_REINICIO_CONTROLADO_2026-10-16.md` | Ficha separada con el respaldo, los conteos anteriores y posteriores y los controles reales del reinicio previo a la validación manual. |
 | `evidencias/EXP-LAB_RECUPERACION_ACCESO_2026-10-16.md` | Evidencia técnica de `EXP-LAB-11`: diagnóstico del primer ingreso, normalización del correo, códigos de recuperación, permisos, pruebas y límites pendientes. |
+| `evidencias/EXP-LAB_CR-006_IMPLEMENTACION_2026-10-18.md` | Evidencia local de `CR-006`: reglas PEN/USD, excepción de fondos, retiro lógico, migración, configuración Vercel/Supabase y 84 pruebas; no declara despliegue real. |
 
 ## Convenciones
 

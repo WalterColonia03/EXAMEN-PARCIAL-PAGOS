@@ -45,6 +45,7 @@ El prototipo debe responder, como mínimo:
 | EXP-LAB-09 | Actividad y análisis | Filtrar y resumir por ámbito, categoría, moneda y estado | Verificada técnicamente en la variante actual |
 | EXP-LAB-10 | Formularios contextuales | Mostrar únicamente los campos aplicables según ámbito, categoría, frecuencia, tipo de monto, fuente y acción seleccionada | Verificada técnicamente — pendiente de revisión visual y validación de producto |
 | EXP-LAB-11 | Acceso y recuperación segura | Ingresar sin depender de mayúsculas en el correo y recuperar correo/contraseña mediante códigos personales o una delegación temporal controlada | Implementado y verificado automáticamente; pendiente de validación visual |
+| EXP-LAB-12 | Ajuste operativo y persistencia productiva | Operar en PEN, conservar USD histórico, reportar excepciones sin escalar permisos, retirar sustento sin borrarlo y desplegar con Supabase | Verificada técnicamente en local; despliegue y validación de producto pendientes |
 
 ### Fuera de esta implementación local
 
@@ -83,7 +84,7 @@ Los nombres de titular y beneficiario son datos operativos; no crean usuarios ni
 
 ### 4.3 Fuente de fondos
 
-`FundingSource` tendrá ámbito, nombre visible, tipo —cuenta, tarjeta, efectivo u otro—, institución, titular, identificador enmascarable, moneda predeterminada, estado y visibilidad. La fuente utilizada se copiará como instantánea en el movimiento para que una edición posterior no cambie el pasado.
+`FundingSource` tendrá ámbito, nombre visible, tipo —cuenta, tarjeta, efectivo u otro—, institución, titular, identificador enmascarable, moneda, estado y visibilidad. Desde `CR-006`, una fuente nueva usa PEN. Las fuentes USD anteriores permanecen visibles solo como historia y no pueden asociarse a operaciones nuevas. La fuente utilizada se copia como instantánea en el movimiento para que una edición posterior no cambie el pasado.
 
 ### 4.4 Categorías
 
@@ -130,11 +131,13 @@ En una recurrencia, el compromiso conserva solo los identificadores que no deber
 
 ### 4.6 Moneda
 
-Toda obligación, compromiso y movimiento guardará un código de moneda ISO de tres letras. El laboratorio ofrecerá al menos PEN y USD, con PEN como valor inicial para los registros existentes.
+Toda obligación, compromiso, fuente y movimiento conserva un código ISO de tres letras para no perder historia. La regla vigente desde `CR-006` es:
 
-- No se suman monedas diferentes.
-- Una conversión solo puede mostrarse si existe tipo de cambio y fecha explícitos.
-- Pago y obligación deben usar la misma moneda en esta etapa; un caso distinto queda bloqueado para revisión.
+- todo registro monetario nuevo se crea en PEN;
+- los registros USD existentes continúan consultables en solo lectura y no se convierten ni reutilizan para crear operaciones;
+- PEN y USD histórico nunca se suman entre sí;
+- la importación distinta de PEN se rechaza y cualquier valor de moneda manipulado en una alta se normaliza a PEN; ninguna operación nueva persiste USD;
+- los informes pueden mostrar USD histórico en una sección separada, sin tipo de cambio implícito.
 
 ## 5. Recurrencias
 
@@ -204,6 +207,14 @@ Reglas:
 5. cuando el saldo llega a cero la obligación se marca pagada;
 6. si el saldo queda entre cero y el total se marca parcialmente pagada;
 7. “pagado” no significa “conciliado por el banco”.
+
+### 6.3 Reporte de falta de fondos
+
+El asistente puede registrar **Falta de fondos** como una excepción operativa con actor, fecha y observación. Este reporte no cambia el estado financiero o administrativo a `SUSPENDED`, no atribuye al asistente la decisión de retener y debe aparecer en la atención del gerente. Solo el gerente puede suspender o reactivar, siempre mediante una acción separada y auditada.
+
+### 6.4 Retiro lógico de documentos
+
+Un documento fuente cargado por error puede retirarse lógicamente solo mientras la obligación no tenga ningún movimiento financiero. El retiro exige motivo, actor y fecha, conserva el registro y el objeto almacenado, deja de presentar el archivo como sustento activo y nunca cambia por sí mismo el estado de la obligación. Después del primer movimiento, el sustento es inmutable. Un comprobante no se retira por esta vía: una corrección financiera requiere el flujo gerencial de anulación o movimiento compensatorio.
 
 ## 7. Privacidad y autorización
 
@@ -292,6 +303,8 @@ Orden funcional de configuración a operación, conservando la cola como módulo
 7. Historial y resumen.
 8. Cola operativa, visible como entrada principal.
 
+El asistente conserva acceso visible a Cola, Calendario, Historial, registro de obligaciones/compromisos y consulta de Cuentas de servicio compartidas. Puede consultar durante la operación las fuentes y cuentas autorizadas, pero no crear, editar ni importar configuración. El gerente conserva los módulos de administración. Reducir enlaces duplicados o agruparlos no autoriza ocultar una capacidad de consulta necesaria.
+
 ### 10.3 Calendario y recordatorios internos
 
 La primera versión ofrece navegación por mes y lista por día. Cada evento muestra ámbito, concepto, saldo, moneda, estado y acceso al detalle. Los recordatorios se calculan dentro de la aplicación; pueden marcarse atendidos u omitidos sin cambiar la obligación.
@@ -379,19 +392,23 @@ Controles de migración:
 4. Registrar estado de tarjeta con ciclo, corte, total, mínimo y pago parcial, sin duplicar compras.
 5. Registrar seguro con contratante, asegurado y beneficiario distintos.
 6. Registrar vivienda, educación, salud, personal doméstico, viaje, inversión, donación y emergencia usando su ámbito correcto.
-7. Rechazar pago superior al saldo y moneda incompatible.
+7. Rechazar pago superior al saldo y cualquier alta monetaria nueva distinta de PEN; conservar USD anterior en solo lectura.
 8. Anular un movimiento con motivo sin eliminarlo; registrar devolución o contracargo y reabrir saldo.
 9. Bloquear al asistente en un ámbito privado mediante lista, URL directa, descarga y vista previa.
 10. Advertir un posible duplicado manual y durante importación.
 11. Mostrar calendario mensual y recordatorio sin enviar correo ni WhatsApp.
 12. Importar un lote válido y revertir completamente un lote con error.
-13. Filtrar panel por ámbito/categoría/moneda sin mezclar monedas.
+13. Filtrar panel por ámbito/categoría y mostrar USD histórico separado, sin mezclarlo con PEN.
 14. Conservar el flujo empresarial anterior y sus documentos después de la migración.
 15. Cambiar ámbito, categoría, frecuencia, tipo de monto, tipo de fuente y estado de revisión, y comprobar que solo aparezcan y se envíen los campos aplicables.
 16. Ingresar con el correo correcto aunque contenga espacios externos o cambie su combinación de mayúsculas y minúsculas, conservándolo en el formulario cuando la contraseña sea incorrecta.
 17. Recuperar el correo de acceso y establecer una contraseña fuerte mediante un código personal opaco, de un solo uso y almacenado únicamente como hash.
 18. Permitir que el gerente, después de reautenticarse, emita para el asistente un código temporal de 30 minutos; impedir que el asistente emita o use una recuperación privilegiada para el gerente.
 19. Rechazar códigos vencidos, reutilizados o sometidos a demasiados intentos; revocar las sesiones anteriores después de cambiar la contraseña y registrar los eventos en una auditoría de seguridad separada de los pagos.
+20. Permitir que el asistente reporte falta de fondos sin suspender y comprobar que solo el gerente pueda decidir suspensión/reactivación.
+21. Retirar lógicamente un sustento antes del primer movimiento, conservar su auditoría y bloquear el retiro después de cualquier movimiento, sin borrado físico.
+22. Mantener Calendario y Cuentas de servicio visibles al asistente en modo consulta, con mantenimiento reservado al gerente.
+23. Comprobar en producción que PostgreSQL y Storage privado de Supabase persisten datos y archivos entre invocaciones de Vercel.
 
 ## 15. Secuencia de construcción experimental
 
@@ -499,3 +516,20 @@ El experimento no debe resolver ese problema revelando cuentas, enviando contras
 ### 19.6 Evidencia exigida
 
 La evidencia separada se mantiene en `evidencias/EXP-LAB_RECUPERACION_ACCESO_2026-10-16.md`. Registra pruebas automatizadas, comprobaciones HTTP, límites pendientes y el respaldo previo sin incluir correos completos, contraseñas, códigos ni hashes reutilizables. `EXP-LAB-11` está verificado técnicamente, pero no se declara aceptado visualmente ni validado por producto hasta que el responsable ejecute el recorrido.
+
+## 20. EXP-LAB-12 — Ajuste operativo y producción Vercel/Supabase
+
+### 20.1 Arquitectura de producción
+
+- Vercel ejecuta Django, pero su sistema de archivos no se usa como almacenamiento persistente.
+- `DATABASE_URL` apunta al *Transaction pooler* PostgreSQL de Supabase mediante TLS.
+- Los documentos se guardan en un bucket privado de Supabase Storage mediante credenciales S3 exclusivas del servidor.
+- Las descargas y vistas previas continúan pasando por autorización de Django; el bucket no expone una URL pública permanente.
+- Las migraciones se ejecutan una vez mediante una operación controlada antes de habilitar la versión, no de forma concurrente en cada Function.
+- Los secretos solo se configuran como variables de entorno y nunca se versionan. `.env.example` enumera los nombres requeridos sin valores reales.
+
+### 20.2 Puerta de verificación
+
+Antes de declarar `CR-006` verificado deben aprobarse, como mínimo, pruebas de permisos por rol y petición directa, altas solo PEN, inmutabilidad del USD histórico, reporte de falta de fondos, retiro lógico antes/después de movimientos, auditoría, acceso privado a archivos, migración desde una base limpia y persistencia real en PostgreSQL/Storage tras un nuevo despliegue o invocación.
+
+**Estado al 18/10/2026:** implementación local verificada: migración `payments.0010`, `check` limpio, `makemigrations --check --dry-run` sin cambios y 84 pruebas automatizadas aprobadas. No se declara todavía despliegue exitoso, persistencia real en PostgreSQL/Storage ni aceptación visual; esas pruebas siguen siendo la puerta de cierre.
