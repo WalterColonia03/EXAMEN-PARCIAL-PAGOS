@@ -62,7 +62,7 @@
     </section>
     <section class="panel" aria-labelledby="access-title">
       <header class="panel-header"><h2 id="access-title">Ingresa a tu espacio de trabajo</h2><p>Inicia sesión con tus credenciales.</p></header>
-      {% if error_message %}<div class="error-alert" id="login-error" role="alert">{{ error_message }} <a href="{% url 'access-recovery' %}">Recupera tu acceso</a> si no recuerdas tus datos.</div>{% endif %}
+      {% if error_message %}<div class="error-alert" id="login-error" role="alert">{{ error_message }} <a href="{% url 'access-recovery-email' %}">Recupera tu acceso</a> si no recuerdas tus datos.</div>{% endif %}
       <form method="post"{% if error_message %} aria-describedby="login-error"{% endif %}>
         {% csrf_token %}
         <div class="field"><label for="email">Correo electrónico</label><input type="email" id="email" name="email" value="{{ submitted_email }}" placeholder="nombre@correo.com" required autocomplete="email" autocapitalize="none" spellcheck="false"></div>
@@ -73,7 +73,7 @@
         </div>
         <button type="submit" class="submit">Ingresar a PagoControl</button>
       </form>
-      <p class="access-help"><a href="{% url 'access-recovery' %}">¿No recuerdas tu correo o contraseña?</a></p>
+      <p class="access-help"><a href="{% url 'access-recovery-email' %}">¿Olvidaste tu contraseña?</a></p>
     </section>
   </main>
   <script>

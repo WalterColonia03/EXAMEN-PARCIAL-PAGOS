@@ -6,21 +6,20 @@ from datetime import timedelta
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.sessions.models import Session
 from django.core.cache import cache
-from django.test import Client, TestCase
+from django.core import mail
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import AccountAccessEvent, AccountRecoveryCode, Role
-from .services import (
-    issue_emergency_codes,
-    issue_temporary_assistant_code,
-    recovery_code_digest,
+from .models import AccountRecoveryCode, Role
+from .services import recovery_code_digest
+
+
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    DEFAULT_FROM_EMAIL="PagoControl <no-reply@example.test>",
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
 )
-
-
-RECOVERY_CODE_PATTERN = re.compile(r"[A-F0-9]{4}(?:-[A-F0-9]{4}){7}")
-
-
 class AccessRecoveryTests(TestCase):
     manager_password = "Gerente-Actual-2026!"
     assistant_password = "Asistente-Actual-2026!"
@@ -42,6 +41,20 @@ class AccessRecoveryTests(TestCase):
             display_name="Ana Valenzuela",
             role=assistant_role,
         )
+
+    def request_email_code(self, account):
+        response = self.client.post(
+            reverse("access-recovery-email"),
+            {"email": account.email},
+        )
+        self.assertRedirects(
+            response,
+            reverse("access-recovery-email-sent"),
+            fetch_redirect_response=False,
+        )
+        match = re.search(r"\b(\d{8})\b", mail.outbox[-1].body)
+        self.assertIsNotNone(match)
+        return match.group(1)
 
     def test_login_accepts_email_with_mixed_case_and_external_spaces(self):
         response = self.client.post(
@@ -105,38 +118,114 @@ class AccessRecoveryTests(TestCase):
         self.assertContains(blocked, "Espera 15 minutos")
         self.assertNotIn("_auth_user_id", self.client.session)
 
-    def test_emergency_code_recovers_password_and_reveals_email_after_success(self):
-        code = issue_emergency_codes(self.manager, actor=self.manager, count=1)[0]
-        new_password = "Nube-Cobalto-8734!"
-
+    def test_email_recovery_sends_a_short_lived_code_without_exposing_the_account(self):
         response = self.client.post(
-            reverse("access-recovery"),
-            {
-                "recovery_code": code.lower().replace("-", " "),
-                "new_password": new_password,
-                "confirm_password": new_password,
-            },
+            reverse("access-recovery-email"),
+            {"email": "  Gerente@PagoControl.Local  "},
         )
 
         self.assertRedirects(
             response,
+            reverse("access-recovery-email-sent"),
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(
+            self.client.get(reverse("access-recovery-email-sent")).status_code,
+            200,
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.manager.email])
+        match = re.search(r"\b(\d{8})\b", mail.outbox[0].body)
+        self.assertIsNotNone(match)
+        code = match.group(1)
+        record = AccountRecoveryCode.objects.get(
+            account=self.manager,
+            kind=AccountRecoveryCode.Kind.EMAIL,
+        )
+        self.assertTrue(record.is_available)
+        self.assertIsNotNone(record.expires_at)
+
+        recovered = self.client.post(
+            reverse("access-recovery"),
+            {
+                "recovery_code": code,
+                "new_password": "Lima-Cedro-2846!",
+                "confirm_password": "Lima-Cedro-2846!",
+            },
+        )
+
+        self.assertRedirects(
+            recovered,
             reverse("access-recovery-complete"),
             fetch_redirect_response=False,
         )
-        complete = self.client.get(reverse("access-recovery-complete"))
-        self.assertContains(complete, self.manager.email)
-        self.assertIsNone(authenticate(username=self.manager.email, password=self.manager_password))
-        self.assertIsNotNone(authenticate(username=self.manager.email, password=new_password))
-        self.assertIsNotNone(AccountRecoveryCode.objects.get(account=self.manager).used_at)
-        self.assertTrue(
-            AccountAccessEvent.objects.filter(
-                account=self.manager,
-                event=AccountAccessEvent.Event.RECOVERY_SUCCEEDED,
-            ).exists()
+        record.refresh_from_db()
+        self.assertIsNotNone(record.used_at)
+
+    def test_unknown_email_has_the_same_generic_response_and_sends_nothing(self):
+        response = self.client.post(
+            reverse("access-recovery-email"),
+            {"email": "no-existe@example.test"},
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("access-recovery-email-sent"),
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(
+            AccountRecoveryCode.objects.filter(kind=AccountRecoveryCode.Kind.EMAIL).exists()
+        )
+
+    def test_authenticated_user_can_change_password_and_keep_the_current_session(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.post(
+            reverse("access-change-password"),
+            {
+                "current_password": self.manager_password,
+                "new_password": "Cobre-Niebla-8547!",
+                "confirm_password": "Cobre-Niebla-8547!",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Tu contraseña fue actualizada")
+        self.assertIsNone(
+            authenticate(username=self.manager.email, password=self.manager_password)
+        )
+        self.assertIsNotNone(
+            authenticate(username=self.manager.email, password="Cobre-Niebla-8547!")
+        )
+        self.assertEqual(self.client.get(reverse("access-security")).status_code, 200)
+
+    def test_recovery_rejects_a_legacy_external_code(self):
+        legacy_code = "A" * 32
+        record = AccountRecoveryCode.objects.create(
+            account=self.manager,
+            digest=recovery_code_digest(legacy_code),
+            kind=AccountRecoveryCode.Kind.EMERGENCY,
+        )
+
+        response = self.client.post(
+            reverse("access-recovery"),
+            {
+                "recovery_code": legacy_code,
+                "new_password": "Nube-Cobalto-8734!",
+                "confirm_password": "Nube-Cobalto-8734!",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        record.refresh_from_db()
+        self.assertIsNone(record.used_at)
+        self.assertIsNotNone(
+            authenticate(username=self.manager.email, password=self.manager_password)
         )
 
     def test_recovery_code_is_single_use_and_response_does_not_reveal_an_account(self):
-        code = issue_emergency_codes(self.assistant, actor=self.assistant, count=1)[0]
+        code = self.request_email_code(self.assistant)
         new_password = "Bosque-Ambar-9517!"
         payload = {
             "recovery_code": code,
@@ -150,13 +239,13 @@ class AccessRecoveryTests(TestCase):
         self.assertEqual(reused.status_code, 200)
         self.assertContains(reused, "No pudimos validar el código")
         self.assertNotContains(reused, self.assistant.email)
-        self.assertNotContains(reused, "Asistente")
+        self.assertNotContains(reused, "Ana Valenzuela")
 
     def test_password_recovery_revokes_existing_sessions(self):
         logged_client = Client()
         self.assertTrue(logged_client.login(email=self.manager.email, password=self.manager_password))
         self.assertGreater(Session.objects.count(), 0)
-        code = issue_emergency_codes(self.manager, actor=self.manager, count=1)[0]
+        code = self.request_email_code(self.manager)
 
         self.client.post(
             reverse("access-recovery"),
@@ -171,8 +260,8 @@ class AccessRecoveryTests(TestCase):
         self.assertEqual(protected.status_code, 302)
         self.assertIn(reverse("login"), protected.url)
 
-    def test_expired_temporary_code_is_rejected(self):
-        code, _ = issue_temporary_assistant_code(self.assistant, actor=self.manager)
+    def test_expired_email_code_is_rejected(self):
+        code = self.request_email_code(self.assistant)
         AccountRecoveryCode.objects.filter(account=self.assistant).update(
             expires_at=timezone.now() - timedelta(seconds=1)
         )
@@ -191,66 +280,8 @@ class AccessRecoveryTests(TestCase):
             authenticate(username=self.assistant.email, password=self.assistant_password)
         )
 
-    def test_manager_can_issue_assistant_code_after_reauthentication(self):
-        self.client.force_login(self.manager)
-        response = self.client.post(
-            reverse("access-generate-assistant-code"),
-            {"assistant": self.assistant.pk, "current_password": self.manager_password},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertRegex(response.content.decode(), RECOVERY_CODE_PATTERN)
-        code_record = AccountRecoveryCode.objects.get(account=self.assistant)
-        self.assertEqual(code_record.kind, AccountRecoveryCode.Kind.TEMPORARY)
-        self.assertEqual(code_record.created_by, self.manager)
-        self.assertIsNotNone(code_record.expires_at)
-
-    def test_assistant_cannot_issue_recovery_for_another_account(self):
-        self.client.force_login(self.assistant)
-
-        response = self.client.post(
-            reverse("access-generate-assistant-code"),
-            {"assistant": self.assistant.pk, "current_password": self.assistant_password},
-        )
-
-        self.assertEqual(response.status_code, 403)
-        self.assertFalse(
-            AccountRecoveryCode.objects.filter(kind=AccountRecoveryCode.Kind.TEMPORARY).exists()
-        )
-
-    def test_manager_must_reauthenticate_before_issuing_assistant_code(self):
-        self.client.force_login(self.manager)
-
-        response = self.client.post(
-            reverse("access-generate-assistant-code"),
-            {"assistant": self.assistant.pk, "current_password": "incorrecta"},
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertContains(response, "contraseña actual no es correcta", status_code=400)
-        self.assertFalse(
-            AccountRecoveryCode.objects.filter(kind=AccountRecoveryCode.Kind.TEMPORARY).exists()
-        )
-
-    def test_generating_new_emergency_kit_revokes_previous_codes(self):
-        previous = issue_emergency_codes(self.manager, actor=self.manager, count=2)
-        self.client.force_login(self.manager)
-
-        response = self.client.post(
-            reverse("access-generate-emergency-codes"),
-            {"current_password": self.manager_password},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(RECOVERY_CODE_PATTERN.findall(response.content.decode())), 5)
-        for code in previous:
-            old_record = AccountRecoveryCode.objects.get(
-                digest=recovery_code_digest(code)
-            )
-            self.assertIsNotNone(old_record.revoked_at)
-
-    def test_weak_password_is_rejected_without_consuming_code(self):
-        code = issue_emergency_codes(self.manager, actor=self.manager, count=1)[0]
+    def test_weak_password_is_rejected_without_consuming_email_code(self):
+        code = self.request_email_code(self.manager)
 
         response = self.client.post(
             reverse("access-recovery"),
@@ -265,18 +296,18 @@ class AccessRecoveryTests(TestCase):
         self.assertContains(response, "contraseña es completamente numérica")
         self.assertIsNone(AccountRecoveryCode.objects.get(account=self.manager).used_at)
 
-    def test_plain_recovery_code_is_never_stored(self):
-        code = issue_emergency_codes(self.manager, actor=self.manager, count=1)[0]
+    def test_plain_email_code_is_never_stored(self):
+        code = self.request_email_code(self.manager)
         record = AccountRecoveryCode.objects.get(account=self.manager)
 
         self.assertNotEqual(record.digest, code)
-        self.assertNotIn(code.replace("-", ""), record.digest.upper())
+        self.assertNotIn(code, record.digest)
 
     def test_recovery_attempts_are_temporarily_limited(self):
-        valid_code = issue_emergency_codes(self.manager, actor=self.manager, count=1)[0]
+        valid_code = self.request_email_code(self.manager)
         password = "Mar-Celeste-8642!"
         invalid_payload = {
-            "recovery_code": "0000-0000-0000-0000-0000-0000-0000-0000",
+            "recovery_code": "00000000",
             "new_password": password,
             "confirm_password": password,
         }
@@ -295,11 +326,31 @@ class AccessRecoveryTests(TestCase):
         self.assertContains(blocked, "Espera 15 minutos")
         self.assertIsNone(AccountRecoveryCode.objects.get(account=self.manager).used_at)
 
+    def test_security_screen_no_longer_offers_saved_codes(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.get(reverse("access-security"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Recuperación por correo")
+        self.assertNotContains(response, "Códigos personales de emergencia")
+        self.assertNotContains(response, "Emitir código temporal")
+
+    def test_legacy_code_endpoints_are_removed(self):
+        self.client.force_login(self.manager)
+
+        self.assertEqual(self.client.post("/mi-acceso/codigos/").status_code, 404)
+        self.assertEqual(
+            self.client.post("/mi-acceso/asistente/codigo/").status_code,
+            404,
+        )
+
     def test_recovery_page_is_public_and_security_page_requires_login(self):
         recovery = self.client.get(reverse("access-recovery"))
         security = self.client.get(reverse("access-security"))
 
         self.assertEqual(recovery.status_code, 200)
-        self.assertContains(recovery, "Si eres asistente")
+        self.assertContains(recovery, "que enviamos al correo de tu cuenta")
+        self.assertNotContains(recovery, "códigos de respaldo")
         self.assertEqual(security.status_code, 302)
         self.assertIn(reverse("login"), security.url)

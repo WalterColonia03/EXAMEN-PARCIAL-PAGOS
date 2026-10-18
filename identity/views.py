@@ -3,25 +3,38 @@ from __future__ import annotations
 import hashlib
 
 from django.conf import settings
-from django.contrib.auth import authenticate, login, logout
+from django.contrib import messages
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404
-from django.shortcuts import redirect, render
-from django.utils import timezone
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from .forms import CurrentPasswordForm, RecoverAccessForm, TemporaryAssistantCodeForm
+from .forms import (
+    AccountOnboardingForm,
+    AssistantAccountForm,
+    ChangePasswordForm,
+    RecoverAccessForm,
+    RequestEmailRecoveryForm,
+)
+from .authorization import roles_required
 from .models import Account, AccountAccessEvent, Role
 from .services import (
+    complete_assistant_onboarding,
+    create_assistant_account,
     InvalidRecoveryCode,
-    available_emergency_code_count,
-    issue_emergency_codes,
-    issue_temporary_assistant_code,
+    change_account_password,
+    issue_email_recovery_code,
     recover_account_access,
+    RecoveryEmailDeliveryError,
+    resend_assistant_verification,
+    revoke_email_recovery_codes,
+    send_email_recovery_code,
+    set_assistant_account_active,
 )
 
 
@@ -34,6 +47,8 @@ RECOVERY_ATTEMPT_LIMIT = 6
 RECOVERY_ATTEMPT_WINDOW_SECONDS = 15 * 60
 LOGIN_ATTEMPT_LIMIT = 8
 LOGIN_ATTEMPT_WINDOW_SECONDS = 15 * 60
+EMAIL_RECOVERY_REQUEST_LIMIT = 5
+EMAIL_RECOVERY_REQUEST_WINDOW_SECONDS = 15 * 60
 
 
 def demo_access_is_available(request) -> bool:
@@ -76,6 +91,8 @@ def safe_next_url(request) -> str:
 
 
 def destination_for(user: Account, request) -> str:
+    if user.must_change_password:
+        return "account-onboarding"
     return safe_next_url(request) or (
         "payment-manager-dashboard"
         if user.role.code == Role.Code.MANAGER
@@ -166,6 +183,53 @@ def _record_failed_recovery(request) -> int:
     return failures
 
 
+def _email_recovery_rate_key(request, email: str) -> str:
+    remote_address = request.META.get("REMOTE_ADDR", "unknown")
+    fingerprint = hashlib.sha256(
+        f"{remote_address}|{email}".encode("utf-8")
+    ).hexdigest()
+    return f"access-email-recovery:{fingerprint}"
+
+
+@never_cache
+@require_http_methods(["GET", "POST"])
+def request_email_recovery(request):
+    if request.user.is_authenticated:
+        return redirect("access-security")
+
+    form = RequestEmailRecoveryForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        email = form.cleaned_data["email"]
+        key = _email_recovery_rate_key(request, email)
+        requests = int(cache.get(key, 0))
+        if requests < EMAIL_RECOVERY_REQUEST_LIMIT:
+            account = (
+                Account.objects.filter(email_normalized=email, is_active=True)
+                .select_related("role")
+                .first()
+            )
+            if account:
+                try:
+                    code, expires_at = issue_email_recovery_code(account)
+                    send_email_recovery_code(account, code, expires_at)
+                except RecoveryEmailDeliveryError:
+                    revoke_email_recovery_codes(account)
+                cache.set(
+                    key,
+                    requests + 1,
+                    EMAIL_RECOVERY_REQUEST_WINDOW_SECONDS,
+                )
+        return redirect("access-recovery-email-sent")
+
+    return render(request, "identity/request_email_recovery.html", {"form": form})
+
+
+@never_cache
+@require_GET
+def recovery_email_sent(request):
+    return render(request, "identity/recovery_email_sent.html")
+
+
 @never_cache
 @require_http_methods(["GET", "POST"])
 def recover_access(request):
@@ -223,13 +287,133 @@ def recovery_complete(request):
     )
 
 
+@never_cache
+@login_required
+@require_http_methods(["GET", "POST"])
+def account_onboarding(request):
+    """Require a newly created assistant to prove mailbox ownership first."""
+    if not request.user.must_change_password:
+        return redirect("dashboard")
+
+    form = AccountOnboardingForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            account = complete_assistant_onboarding(
+                account=request.user,
+                code=form.cleaned_data["verification_code"],
+                new_password=form.cleaned_data["new_password"],
+                keep_session_key=request.session.session_key,
+            )
+        except InvalidRecoveryCode:
+            form.add_error(
+                "verification_code",
+                "No pudimos validar el código. Solicita al gerente uno nuevo si venció.",
+            )
+        except ValidationError as error:
+            form.add_error("new_password", error)
+        else:
+            update_session_auth_hash(request, account)
+            messages.success(
+                request,
+                "Correo verificado y contraseña personal creada. Ya puedes usar PagoControl.",
+            )
+            return redirect("dashboard")
+
+    return render(request, "identity/account_onboarding.html", {"form": form})
+
+
+@never_cache
+@roles_required(Role.Code.MANAGER)
+@require_http_methods(["GET", "POST"])
+def manager_assistant_accounts(request):
+    form = AssistantAccountForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        if not request.user.check_password(form.cleaned_data["manager_password"]):
+            form.add_error("manager_password", "La contraseña de gerente no es correcta.")
+        else:
+            try:
+                assistant, _ = create_assistant_account(
+                    actor=request.user,
+                    display_name=form.cleaned_data["display_name"],
+                    email=form.cleaned_data["email"],
+                    temporary_password=form.cleaned_data["new_password"],
+                )
+            except RecoveryEmailDeliveryError:
+                form.add_error(
+                    None,
+                    "No se pudo enviar el código de verificación. La cuenta no fue creada.",
+                )
+            except (ValidationError, ValueError) as error:
+                form.add_error("email", error)
+            else:
+                messages.success(
+                    request,
+                    f"Cuenta creada para {assistant.display_name}. El asistente debe verificar su correo y reemplazar la contraseña temporal.",
+                )
+                return redirect("manager-assistant-accounts")
+
+    status = 400 if request.method == "POST" and form.errors else 200
+    assistants = Account.objects.filter(role__code=Role.Code.ASSISTANT).order_by(
+        "is_active", "email_normalized"
+    )
+    return render(
+        request,
+        "identity/manager_assistant_accounts.html",
+        {"form": form, "assistants": assistants},
+        status=status,
+    )
+
+
+@never_cache
+@roles_required(Role.Code.MANAGER)
+@require_POST
+def resend_assistant_account_verification(request, account_id):
+    assistant = get_object_or_404(
+        Account.objects.select_related("role"),
+        pk=account_id,
+        role__code=Role.Code.ASSISTANT,
+    )
+    try:
+        resend_assistant_verification(assistant, actor=request.user)
+    except RecoveryEmailDeliveryError:
+        messages.error(
+            request,
+            "No se pudo enviar el código de verificación. Revisa la configuración SMTP antes de reintentar.",
+        )
+    except (PermissionError, ValueError) as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, f"Se envió un nuevo código de verificación a {assistant.email}.")
+    return redirect("manager-assistant-accounts")
+
+
+@never_cache
+@roles_required(Role.Code.MANAGER)
+@require_POST
+def set_managed_assistant_active(request, account_id, active):
+    assistant = get_object_or_404(
+        Account.objects.select_related("role"),
+        pk=account_id,
+        role__code=Role.Code.ASSISTANT,
+    )
+    try:
+        set_assistant_account_active(assistant, actor=request.user, active=active)
+    except RecoveryEmailDeliveryError:
+        messages.error(
+            request,
+            "No se pudo reactivar la cuenta porque falló el envío de verificación. La cuenta sigue desactivada.",
+        )
+    except PermissionError as error:
+        messages.error(request, str(error))
+    else:
+        action = "reactivada" if active else "desactivada"
+        messages.success(request, f"La cuenta de {assistant.display_name} fue {action}.")
+    return redirect("manager-assistant-accounts")
+
+
 def _security_context(request, **extra):
     context = {
-        "emergency_form": CurrentPasswordForm(),
-        "temporary_form": TemporaryAssistantCodeForm()
-        if request.user.role.code == Role.Code.MANAGER
-        else None,
-        "available_code_count": available_emergency_code_count(request.user),
+        "password_form": ChangePasswordForm(),
         "access_events": AccountAccessEvent.objects.filter(account=request.user)[:8],
     }
     context.update(extra)
@@ -246,8 +430,8 @@ def access_security(request):
 @never_cache
 @login_required
 @require_POST
-def generate_emergency_codes(request):
-    form = CurrentPasswordForm(request.POST)
+def change_password(request):
+    form = ChangePasswordForm(request.POST)
     if not form.is_valid() or not request.user.check_password(
         form.cleaned_data.get("current_password", "")
     ):
@@ -256,51 +440,20 @@ def generate_emergency_codes(request):
         return render(
             request,
             "identity/access_security.html",
-            _security_context(request, emergency_form=form),
+            _security_context(request, password_form=form),
             status=400,
         )
 
-    codes = issue_emergency_codes(request.user, actor=request.user)
+    account = change_account_password(
+        request.user,
+        form.cleaned_data["new_password"],
+        keep_session_key=request.session.session_key,
+    )
+    update_session_auth_hash(request, account)
     return render(
         request,
         "identity/access_security.html",
-        _security_context(request, new_emergency_codes=codes),
-    )
-
-
-@never_cache
-@login_required
-@require_POST
-def generate_assistant_temporary_code(request):
-    if request.user.role.code != Role.Code.MANAGER:
-        raise PermissionDenied("Solo el gerente puede recuperar el acceso de un asistente.")
-
-    form = TemporaryAssistantCodeForm(request.POST)
-    if not form.is_valid() or not request.user.check_password(
-        form.cleaned_data.get("current_password", "")
-    ):
-        if form.is_valid():
-            form.add_error("current_password", "La contraseña actual no es correcta.")
-        return render(
-            request,
-            "identity/access_security.html",
-            _security_context(request, temporary_form=form),
-            status=400,
-        )
-
-    code, expires_at = issue_temporary_assistant_code(
-        form.cleaned_data["assistant"],
-        actor=request.user,
-    )
-    return render(
-        request,
-        "identity/access_security.html",
-        _security_context(
-            request,
-            temporary_code=code,
-            temporary_code_account=form.cleaned_data["assistant"],
-            temporary_code_expires=timezone.localtime(expires_at),
-        ),
+        _security_context(request, password_change_success=True),
     )
 
 

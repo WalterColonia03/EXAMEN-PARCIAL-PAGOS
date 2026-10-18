@@ -6,6 +6,7 @@ __pycache__/
 
 # Datos y archivos locales de Django
 db.sqlite3
+.isolated-tests.sqlite3
 private_uploads/
 staticfiles/
 

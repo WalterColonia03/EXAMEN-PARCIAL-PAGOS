@@ -1,125 +1,68 @@
-# Despliegue de PagoControl en Vercel + Supabase
+# Despliegue y operación: Vercel + Supabase
 
-Esta guía prepara una primera publicación segura. El repositorio ya está listo
-para PostgreSQL y un bucket privado de Supabase; todavía **no** se ha creado ni
-modificado ningún proyecto real de Supabase o Vercel desde este repositorio.
+## Estado confirmado
 
-## 1. Crear y preparar Supabase
+- PostgreSQL usa el Transaction Pooler de Supabase mediante TLS.
+- RLS está activo en las 27 tablas de `public`; `anon` y `authenticated` no tienen permisos directos.
+- El bucket `pagocontrol-private` es privado y se accede mediante autorización de Django y URL firmada.
+- Están aplicadas `payments.0011_lock_down_supabase_data_api`, `identity.0003_email_password_recovery` e `identity.0004_assistant_account_onboarding`. La liberación de este cambio debe aplicar además `identity.0006_revoke_external_recovery_codes`.
+- La entrega real de TurboSMTP se comprobó desde el entorno controlado. El sitio publicado no usará esta integración hasta recibir el código por GitHub/Vercel y sus variables de entorno.
 
-1. Crea un proyecto nuevo en Supabase y guarda sus credenciales fuera del
-   repositorio.
-2. En **Storage**, crea el bucket privado `pagocontrol-private`. No lo marques
-   público. Limita los archivos a PDF, JPG, JPEG y PNG con un máximo de 4 MB.
-3. En **Storage > S3 Access Keys**, crea una clave de servidor y conserva su
-   `access key` y `secret key` únicamente para las variables de Vercel. No uses
-   la clave anónima ni expongas estas claves en el navegador.
-4. En **Connect**, copia dos URI distintos:
+No use Supabase Auth ni Data API desde el navegador: esta aplicación usa Django para autenticar y autorizar.
 
-   - La conexión directa (o *Session pooler* si la conexión directa no es
-     accesible desde tu red) solo se usa desde una máquina controlada para las
-     migraciones.
-   - El URI del **Transaction pooler**, puerto `6543`, se usa en Vercel. Debe
-     conservar TLS (`sslmode=require`).
+## Variables de Vercel
 
-5. Copia de la configuración S3 el endpoint y la región. El endpoint tiene la
-   forma `https://<project-ref>.storage.supabase.co/storage/v1/s3`; no adivines
-   ni cambies el `project-ref` o la región.
+Registre valores reales exclusivamente en Vercel; `.env.example` no contiene secretos y `.env` no se versiona.
 
-La aplicación se conecta directamente a PostgreSQL y S3; no requiere activar
-la Data API para funcionar. Mantenerla desactivada reduce la superficie que no
-usa esta aplicación.
+| Variable | Requisito |
+| --- | --- |
+| `DJANGO_DEBUG` | `0` en Production. |
+| `DJANGO_SECRET_KEY` | Valor aleatorio y exclusivo de Production. |
+| `DJANGO_ALLOWED_HOSTS` | Dominio de producción y dominio Vercel si corresponde. |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Orígenes HTTPS completos separados por coma. |
+| `DATABASE_URL` | URI TLS del Transaction Pooler de Supabase. |
+| `SUPABASE_STORAGE_BUCKET` | `pagocontrol-private`. |
+| `SUPABASE_S3_ENDPOINT_URL` | Endpoint S3 del proyecto. |
+| `SUPABASE_S3_REGION` | Región S3 del proyecto. |
+| `SUPABASE_S3_ACCESS_KEY_ID` | Credencial S3 exclusiva del servidor. |
+| `SUPABASE_S3_SECRET_ACCESS_KEY` | Secreto S3 exclusivo del servidor. |
+| `SUPABASE_SIGNED_URL_TTL` | `60` salvo necesidad justificada. |
+| `DJANGO_EMAIL_BACKEND` | `identity.email_backends.TurboSMTPEmailBackend`. |
+| `TURBOSMTP_API_URL` | `https://api.turbo-smtp.com/api/v2/mail/send` o el endpoint EU asignado por el proveedor. |
+| `TURBOSMTP_CONSUMER_KEY` | Consumer Key de TurboSMTP. |
+| `TURBOSMTP_CONSUMER_SECRET` | Consumer Secret de TurboSMTP. |
+| `TURBOSMTP_TIMEOUT` | `10` segundos salvo necesidad justificada. |
+| `DJANGO_DEFAULT_FROM_EMAIL` | Dirección remitente autorizada por TurboSMTP. |
 
-## 2. Aplicar el esquema antes del primer deploy
+El remitente debe ser una dirección autorizada por TurboSMTP. La contraseña personal del buzón no se utiliza ni se almacena en PagoControl.
 
-No ejecutes migraciones durante el build de Vercel: varias Functions podrían
-intentar hacerlo a la vez. Desde una terminal controlada, con una conexión
-directa o Session pooler de Supabase, exporta temporalmente `DATABASE_URL` y
-ejecuta:
+## Liberación
+
+1. Configure las variables anteriores en Vercel Production.
+2. Ejecute, en una base de pruebas aislada:
+
+   ```powershell
+   python manage.py test identity payments.test_ui_experience
+   python manage.py check --deploy
+   python manage.py migrate --plan
+   ```
+
+3. Confirme que `migrate --plan` no propone cambios inesperados. Las migraciones no se ejecutan durante el build de Vercel.
+4. Revise el diff, cree el commit y haga `push` a la rama conectada con Vercel.
+5. Compruebe el despliegue y los logs, sin registrar códigos, contraseñas ni secretos.
+
+## Activación inicial y asistentes
+
+Con una base sin gerentes activos o después de retirar las cuentas de prueba, ejecute una sola vez:
 
 ```powershell
-.\.venv\Scripts\python.exe manage.py migrate --noinput
-.\.venv\Scripts\python.exe manage.py create_initial_manager --email gerente@tu-dominio.pe --display-name "Gerente principal"
+python manage.py provision_initial_manager --email gerente@dominio.com --display-name "Nombre del gerente"
 ```
 
-El segundo comando pide la contraseña de forma interactiva y crea el rol
-`Gerente`. No uses `createsuperuser` como sustituto: crea un usuario `Admin`,
-que no es un rol operativo de PagoControl.
+El gerente recibe un código de recuperación de un solo uso en su correo. En **Recuperar acceso** define su propia contraseña y queda con el correo verificado. Después inicia sesión, abre **Equipo de asistentes**, crea la cuenta del asistente y entrega su contraseña temporal solo por un canal privado.
 
-Para una base local con datos existentes, primero conserva una copia de
-`db.sqlite3` y `private_uploads/`. `migrate` solo crea el esquema de PostgreSQL;
-no migra automáticamente las filas ni los archivos locales. No despliegues ni
-ejecutes `seed_demo_data.py` en producción. Planifica una migración de datos
-separada y verificable si necesitas conservar información local.
+El asistente debe recibir el código en su correo, iniciar sesión con la contraseña temporal, verificar su buzón y definir una contraseña personal. Una cuenta no verificada no puede acceder a pagos. Verifique también que desactivar cierre sus sesiones, revoque sus códigos y que reactivar una cuenta pendiente envíe un código nuevo. La recuperación de contraseña solo admite códigos recibidos por correo; no distribuya códigos de respaldo ni temporales.
 
-## 3. Valores en la pantalla “New Project” de Vercel
+## Reversión
 
-Usa estos valores en la pantalla mostrada al importar el repositorio:
-
-| Campo | Valor |
-| --- | --- |
-| Project Name | `examen-parcial-pagos` |
-| Root Directory | `./` |
-| Application Preset | `Django` |
-| Build Command | Déjalo sin personalizar (`None`/valor predeterminado) |
-| Output Directory | Déjalo sin personalizar (`N/A`) |
-| Install Command | `pip install -r requirements.txt` |
-
-No agregues un `vercel.json` ni un comando que ejecute `migrate` en el build.
-
-## 4. Variables de entorno de Vercel
-
-Añade las siguientes variables antes de pulsar **Deploy**. Inicialmente elige
-solo el entorno **Production**. Para *Preview* usa otro proyecto/bucket de
-Supabase; no reutilices las credenciales productivas en ramas de prueba.
-
-| Key | Valor de Production |
-| --- | --- |
-| `DJANGO_DEBUG` | `0` |
-| `DJANGO_SECRET_KEY` | Una clave aleatoria larga, por ejemplo generada con `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
-| `DJANGO_ALLOWED_HOSTS` | `examen-parcial-pagos.vercel.app` (y el dominio propio, separado por comas, si existe) |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | `https://examen-parcial-pagos.vercel.app` (y cada dominio propio con `https://`) |
-| `DATABASE_URL` | URI del **Transaction pooler** de Supabase, puerto `6543`, con TLS |
-| `SUPABASE_STORAGE_BUCKET` | `pagocontrol-private` |
-| `SUPABASE_S3_ENDPOINT_URL` | Endpoint S3 copiado de Supabase, por ejemplo `https://<project-ref>.storage.supabase.co/storage/v1/s3` |
-| `SUPABASE_S3_REGION` | Región exacta copiada de la configuración S3 de Supabase |
-| `SUPABASE_S3_ACCESS_KEY_ID` | Access key S3 de servidor |
-| `SUPABASE_S3_SECRET_ACCESS_KEY` | Secret key S3 de servidor |
-| `SUPABASE_SIGNED_URL_TTL` | `60` |
-
-Si Vercel asigna otro dominio al proyecto, sustituye los dos valores con
-`examen-parcial-pagos.vercel.app` por el dominio que Vercel indique. No incluyas
-comillas, `<>`, la URL del panel de Supabase ni secretos reales en `.env.example`
-o en Git.
-
-## 5. Verificación posterior al deploy
-
-1. Revisa el log de Vercel: no debe aparecer un error por variables faltantes,
-   migraciones pendientes ni configuración incompleta de Storage.
-2. Inicia sesión con el gerente inicial creado en el paso 2.
-3. Crea una obligación nueva y confirma que muestra PEN como moneda fija.
-4. Adjunta un PDF de prueba menor a 4 MB y confirma que puede verse y
-   descargarse solo con una sesión autorizada.
-5. Registra el aviso de falta de fondos con un asistente y confirma que el
-   estado de la obligación no cambia a suspendido.
-6. Haz un redeploy sin modificar la base: la obligación y el documento deben
-   seguir disponibles. Esto prueba que no dependen de SQLite ni del disco
-   efímero de Vercel.
-
-Vercel limita el cuerpo de solicitud/respuesta de una Function a 4.5 MB. Por
-eso esta versión valida documentos de hasta 4 MB. Para archivos mayores habría
-que diseñar una carga directa firmada al bucket, no subir el límite a ciegas.
-
-## 6. Reversión
-
-Si una versión falla, usa **Rollback** de Vercel para volver al deployment
-anterior. El rollback no revierte cambios de PostgreSQL ni archivos en Storage:
-antes de una migración de datos toma un respaldo de la base y del bucket y
-prueba la restauración en un entorno separado.
-
-## Referencias oficiales
-
-- [Supabase: conectar a Postgres](https://supabase.com/docs/guides/database/connecting-to-postgres)
-- [Supabase: autenticación S3](https://supabase.com/docs/guides/storage/s3/authentication)
-- [Supabase: proteger la Data API](https://supabase.com/docs/guides/api/securing-your-api)
-- [Vercel: soporte Django sin configuración](https://vercel.com/changelog/zero-configuration-django-support)
-- [Vercel: límites de Functions](https://vercel.com/docs/functions/limitations)
+Si debe revertirse la aplicación, revierta solamente código a una revisión comprobada. No elimine ni revierta a ciegas migraciones, RLS, cuentas o archivos del bucket: evalúe antes el impacto y mantenga una copia recuperable.

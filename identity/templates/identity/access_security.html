@@ -31,77 +31,43 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Mi acceso</h1>
-    <p class="page-subtitle">Protege tu cuenta y prepara una salida segura si olvidas el correo o la contraseña.</p>
+    <p class="page-subtitle">Protege tu cuenta y confirma el correo que se usará para recuperar el acceso.</p>
   </div>
 </div>
 
-{% if new_emergency_codes %}
-<section class="code-panel" aria-labelledby="new-codes-title">
-  <h2 id="new-codes-title">Guarda estos códigos ahora</h2>
-  <p>Se muestran una sola vez. Cada código recupera tu cuenta una vez, incluso si no recuerdas el correo. Los códigos anteriores dejaron de funcionar.</p>
-  <ul class="code-list" id="emergency-code-list">
-    {% for code in new_emergency_codes %}<li><code>{{ code }}</code></li>{% endfor %}
-  </ul>
-  <div class="code-actions">
-    <button class="btn btn-primary" type="button" data-copy-codes>Copiar códigos</button>
-    <button class="btn btn-secondary" type="button" onclick="window.print()">Imprimir</button>
-  </div>
-</section>
-{% endif %}
-
-{% if temporary_code %}
-<section class="code-panel" aria-labelledby="temporary-code-title">
-  <h2 id="temporary-code-title">Código temporal para {{ temporary_code_account.display_name }}</h2>
-  <p>Comunícalo por un canal privado después de verificar la identidad. Vence el {{ temporary_code_expires|date:"d/m/Y" }} a las {{ temporary_code_expires|time:"H:i" }} y solo puede usarse una vez.</p>
-  <code class="temporary-code" id="temporary-code-value">{{ temporary_code }}</code>
-  <div class="code-actions" style="margin-top:12px"><button class="btn btn-primary" type="button" data-copy-value="#temporary-code-value">Copiar código</button></div>
-</section>
-{% endif %}
-
 <div class="access-grid">
-  <section class="card access-card" aria-labelledby="personal-codes-title">
-    <h2 id="personal-codes-title">Códigos personales de emergencia</h2>
-    <p>Son tu respaldo si pierdes a la vez el correo y la contraseña. Guárdalos fuera de PagoControl.</p>
-    <div class="access-summary"><div><strong>Códigos disponibles</strong><br><span>{{ user.email }}</span></div><span class="status-number">{{ available_code_count }}</span></div>
-    <form class="access-form" method="post" action="{% url 'access-generate-emergency-codes' %}">
+  <section class="card access-card" aria-labelledby="change-password-title">
+    <h2 id="change-password-title">Cambiar contraseña</h2>
+    <p>Actualízala desde una sesión segura. Las demás sesiones abiertas se cerrarán automáticamente.</p>
+    {% if password_change_success %}<p class="access-note" role="status">Tu contraseña fue actualizada. Esta sesión se mantiene abierta.</p>{% endif %}
+    <form class="access-form" method="post" action="{% url 'access-change-password' %}">
       {% csrf_token %}
+      {{ password_form.non_field_errors }}
       <div class="form-field">
-        <label class="form-label" for="{{ emergency_form.current_password.id_for_label }}">{{ emergency_form.current_password.label }}</label>
-        {{ emergency_form.current_password }}
-        {{ emergency_form.current_password.errors }}
+        <label class="form-label" for="{{ password_form.current_password.id_for_label }}">{{ password_form.current_password.label }}</label>
+        {{ password_form.current_password }}
+        {{ password_form.current_password.errors }}
       </div>
-      <button class="btn btn-primary" type="submit">Generar 5 códigos nuevos</button>
+      <div class="form-field">
+        <label class="form-label" for="{{ password_form.new_password.id_for_label }}">{{ password_form.new_password.label }}</label>
+        {{ password_form.new_password }}
+        {{ password_form.new_password.errors }}
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="{{ password_form.confirm_password.id_for_label }}">{{ password_form.confirm_password.label }}</label>
+        {{ password_form.confirm_password }}
+        {{ password_form.confirm_password.errors }}
+      </div>
+      <button class="btn btn-primary" type="submit">Actualizar contraseña</button>
     </form>
-    <p class="access-note">Al generar otro juego, los códigos personales anteriores se revocan. PagoControl solo conserva una huella irreversible de cada código.</p>
   </section>
 
-  {% if user.role.code == 'GERENTE' %}
-  <section class="card access-card" aria-labelledby="assistant-recovery-title">
-    <h2 id="assistant-recovery-title">Recuperar acceso del asistente</h2>
-    <p>Después de verificar su identidad, emite un código temporal para que pueda definir una nueva contraseña y recuperar su correo.</p>
-    <form class="access-form" method="post" action="{% url 'access-generate-assistant-code' %}">
-      {% csrf_token %}
-      <div class="form-field">
-        <label class="form-label" for="{{ temporary_form.assistant.id_for_label }}">{{ temporary_form.assistant.label }}</label>
-        {{ temporary_form.assistant }}
-        {{ temporary_form.assistant.errors }}
-      </div>
-      <div class="form-field">
-        <label class="form-label" for="{{ temporary_form.current_password.id_for_label }}">{{ temporary_form.current_password.label }}</label>
-        {{ temporary_form.current_password }}
-        {{ temporary_form.current_password.errors }}
-      </div>
-      <button class="btn btn-primary" type="submit">Emitir código temporal</button>
-    </form>
-    <p class="access-note">El asistente nunca puede restablecer la cuenta del gerente. Si el gerente pierde también sus códigos, la recuperación requiere al responsable local del sistema.</p>
+  <section class="card access-card" aria-labelledby="recovery-email-title">
+    <h2 id="recovery-email-title">Recuperación por correo</h2>
+    <p>Si olvidas tu contraseña, solicita un código de ocho dígitos desde la pantalla de inicio de sesión. No necesitas guardar ni compartir códigos fuera de PagoControl.</p>
+    <div class="access-summary"><div><strong>Correo de recuperación</strong><br><span>{{ user.email }}</span></div></div>
+    <p class="access-note">El código llega únicamente a este correo, vence en 15 minutos y se invalida al pedir uno nuevo o al usarlo.</p>
   </section>
-  {% else %}
-  <section class="card access-card" aria-labelledby="assistant-help-title">
-    <h2 id="assistant-help-title">Si pierdes todos tus datos</h2>
-    <p>Pide al gerente que confirme tu identidad y emita un código temporal. El gerente no puede ver tu contraseña actual.</p>
-    <p class="access-note">Nadie debe pedirte que compartas una contraseña. El código temporal solo sirve para establecer una nueva.</p>
-  </section>
-  {% endif %}
 
   <section class="card access-events" aria-labelledby="access-events-title">
     <div class="card-header"><h2 class="card-title" id="access-events-title">Actividad de recuperación</h2></div>
@@ -112,30 +78,4 @@
     {% else %}<p class="empty-events">Todavía no hay acciones de recuperación registradas para esta cuenta.</p>{% endif %}
   </section>
 </div>
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-(function () {
-  function copyText(text, button) {
-    if (!navigator.clipboard) return;
-    navigator.clipboard.writeText(text).then(function () {
-      var original = button.textContent;
-      button.textContent = 'Copiado';
-      setTimeout(function () { button.textContent = original; }, 1800);
-    });
-  }
-  var copyCodes = document.querySelector('[data-copy-codes]');
-  if (copyCodes) copyCodes.addEventListener('click', function () {
-    var values = Array.from(document.querySelectorAll('#emergency-code-list code')).map(function (node) { return node.textContent.trim(); });
-    copyText(values.join('\n'), copyCodes);
-  });
-  document.querySelectorAll('[data-copy-value]').forEach(function (button) {
-    button.addEventListener('click', function () {
-      var target = document.querySelector(button.getAttribute('data-copy-value'));
-      if (target) copyText(target.textContent.trim(), button);
-    });
-  });
-})();
-</script>
 {% endblock %}

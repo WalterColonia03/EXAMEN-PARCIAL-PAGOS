@@ -966,6 +966,12 @@
         Ámbitos administrados
       </a>
       {% endif %}
+      {% if user.role.code == 'GERENTE' %}
+      <a href="{% url 'manager-assistant-accounts' %}" class="sidebar-link {% if request.resolver_match.url_name == 'manager-assistant-accounts' %}active{% endif %}" id="nav-assistant-accounts">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-2a6 6 0 0 1 12 0v2"/><path d="M16 11h5M18.5 8.5v5"/></svg>
+        Equipo de asistentes
+      </a>
+      {% endif %}
     </aside>
 
     <!-- Main -->

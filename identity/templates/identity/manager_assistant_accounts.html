@@ -1,0 +1,118 @@
+{% extends "payments/base.html" %}
+
+{% block title %}Equipo de asistentes{% endblock %}
+
+{% block extra_head %}
+<style>
+  .assistant-admin-grid { display:grid; grid-template-columns:minmax(300px,.9fr) minmax(0,1.35fr); gap:20px; align-items:start; }
+  .assistant-admin-card { padding:22px; }
+  .assistant-admin-card h2 { margin:0 0 8px; font-size:1.08rem; letter-spacing:-.02em; }
+  .assistant-admin-card > p { margin:0 0 18px; color:var(--c-text-2); font-size:.85rem; line-height:1.6; }
+  .assistant-account-form { display:grid; gap:14px; }
+  .assistant-account-form .form-field { display:grid; gap:6px; }
+  .assistant-account-form .form-label { font-weight:650; }
+  .assistant-account-form .help-text { margin:0; color:var(--c-text-2); font-size:.76rem; line-height:1.5; }
+  .assistant-security-note { margin-top:16px; padding:12px 14px; color:#59420a; background:#fff9e8; border:1px solid #f1cf77; border-radius:var(--radius-sm); font-size:.78rem; line-height:1.55; }
+  .assistant-status { display:inline-flex; align-items:center; min-height:26px; padding:3px 9px; border:1px solid var(--c-border); border-radius:999px; font-size:.73rem; font-weight:700; white-space:nowrap; }
+  .assistant-status--verified { color:#126b32; background:rgba(48,209,88,.10); border-color:rgba(48,209,88,.35); }
+  .assistant-status--pending { color:#805309; background:rgba(255,159,10,.11); border-color:rgba(255,159,10,.38); }
+  .assistant-status--inactive { color:#5f5f64; background:rgba(110,110,115,.10); border-color:rgba(110,110,115,.27); }
+  .assistant-email { overflow-wrap:anywhere; }
+  .assistant-actions { display:flex; flex-wrap:wrap; gap:8px; }
+  .assistant-actions form { margin:0; }
+  .assistant-actions .btn { min-height:36px; }
+  .assistant-empty { padding:22px; color:var(--c-text-2); text-align:center; }
+  @media (max-width:1040px) { .assistant-admin-grid { grid-template-columns:1fr; } }
+  @media (max-width:640px) { .assistant-admin-card { padding:18px; } .assistant-actions { min-width:160px; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Equipo de asistentes</h1>
+    <p class="page-subtitle">Crea, verifica y controla las cuentas de asistentes sin exponer sus contraseñas personales.</p>
+  </div>
+</div>
+
+<div class="assistant-admin-grid">
+  <section class="card assistant-admin-card" aria-labelledby="create-assistant-title">
+    <h2 id="create-assistant-title">Crear cuenta de asistente</h2>
+    <p>El correo debe ser real. La persona recibirá un código y no podrá trabajar hasta verificar que controla ese buzón.</p>
+    <form class="assistant-account-form" method="post" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="errorlist non-field-errors" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="form-field">
+        <label class="form-label" for="{{ form.display_name.id_for_label }}">{{ form.display_name.label }}</label>
+        {{ form.display_name }}
+        {{ form.display_name.errors }}
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+        {{ form.email }}
+        {{ form.email.errors }}
+        <p class="help-text">No se admiten correos locales, de prueba o reservados.</p>
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="{{ form.new_password.id_for_label }}">{{ form.new_password.label }}</label>
+        {{ form.new_password }}
+        {{ form.new_password.errors }}
+        <p class="help-text">Entrégala por un canal privado. Debe tener 10 o más caracteres y el sistema no la mostrará otra vez.</p>
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="{{ form.confirm_password.id_for_label }}">{{ form.confirm_password.label }}</label>
+        {{ form.confirm_password }}
+        {{ form.confirm_password.errors }}
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="{{ form.manager_password.id_for_label }}">{{ form.manager_password.label }}</label>
+        {{ form.manager_password }}
+        {{ form.manager_password.errors }}
+      </div>
+      <button class="btn btn-primary" type="submit">Crear y enviar verificación</button>
+    </form>
+    <p class="assistant-security-note">La contraseña temporal no se envía por correo ni queda visible en PagoControl. El asistente la reemplaza durante la primera activación.</p>
+  </section>
+
+  <section class="card assistant-admin-card" aria-labelledby="assistant-list-title">
+    <h2 id="assistant-list-title">Cuentas administradas</h2>
+    <p>Desactivar cierra las sesiones del asistente e invalida sus códigos pendientes. Al reactivar una cuenta pendiente se envía un código nuevo.</p>
+    {% if assistants %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Asistente</th><th>Estado</th><th>Creada</th><th>Acciones</th></tr></thead>
+      <tbody>
+        {% for assistant in assistants %}
+        <tr>
+          <td><strong>{{ assistant.display_name }}</strong><br><span class="assistant-email text-muted">{{ assistant.email }}</span></td>
+          <td>
+            {% if not assistant.is_active %}
+              <span class="assistant-status assistant-status--inactive">Desactivada</span>
+            {% elif assistant.must_change_password %}
+              <span class="assistant-status assistant-status--pending">Verificación pendiente</span>
+            {% elif assistant.email_verified_at %}
+              <span class="assistant-status assistant-status--verified">Correo verificado</span>
+            {% else %}
+              <span class="assistant-status assistant-status--pending">Verificación pendiente</span>
+            {% endif %}
+          </td>
+          <td>{{ assistant.created_at|date:"d/m/Y" }}</td>
+          <td><div class="assistant-actions">
+            {% if assistant.is_active %}
+              {% if assistant.must_change_password %}
+              <form method="post" action="{% url 'manager-assistant-verification-resend' assistant.pk %}">{% csrf_token %}<button class="btn btn-secondary btn-sm" type="submit">Reenviar código</button></form>
+              {% endif %}
+              <form method="post" action="{% url 'manager-assistant-deactivate' assistant.pk %}">{% csrf_token %}<button class="btn btn-danger btn-sm" type="submit">Desactivar</button></form>
+            {% else %}
+              <form method="post" action="{% url 'manager-assistant-reactivate' assistant.pk %}">{% csrf_token %}<button class="btn btn-primary btn-sm" type="submit">Reactivar</button></form>
+            {% endif %}
+          </div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <p class="assistant-empty">Aún no hay asistentes registrados. Crea la primera cuenta desde este panel.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -41,7 +41,7 @@
     <a class="brand" href="{% url 'login' %}"><span class="brand-mark" aria-hidden="true">P</span>PagoControl</a>
     <section class="card" aria-labelledby="recovery-title">
       <h1 id="recovery-title">Recupera tu acceso</h1>
-      <p class="lead">El código identifica tu cuenta aunque no recuerdes el correo. Es de un solo uso: al validarlo podrás crear una contraseña nueva y el sistema te mostrará el correo con el que debes ingresar.</p>
+      <p class="lead">Escribe el código de 8 dígitos que enviamos al correo de tu cuenta. Es de un solo uso y vence en 15 minutos; al validarlo podrás crear una contraseña nueva.</p>
 
       <form method="post" novalidate>
         {% csrf_token %}
@@ -50,7 +50,7 @@
           <label for="{{ form.recovery_code.id_for_label }}">{{ form.recovery_code.label }}</label>
           {{ form.recovery_code }}
           {{ form.recovery_code.errors }}
-          <p class="help">Puedes escribirlo con o sin guiones. No se distingue entre mayúsculas y minúsculas.</p>
+          <p class="help">Solo se aceptan códigos numéricos enviados por PagoControl a tu correo.</p>
         </div>
         <div class="field">
           <label for="{{ form.new_password.id_for_label }}">{{ form.new_password.label }}</label>
@@ -66,10 +66,11 @@
         <button class="submit" type="submit">Restablecer mi acceso</button>
       </form>
 
-      <div class="next-steps" aria-label="Opciones si no tienes un código">
-        <div class="step"><h2>Si eres asistente</h2><p>Pide al gerente que verifique tu identidad y genere un código temporal desde “Mi acceso”.</p></div>
-        <div class="step"><h2>Si eres gerente</h2><p>Usa uno de tus códigos personales guardados fuera del sistema. Si también los perdiste, el responsable local deberá restablecer la cuenta.</p></div>
+      <div class="next-steps" aria-label="Ayuda para el código enviado por correo">
+        <div class="step"><h2>¿No recibiste el correo?</h2><p>Revisa correo no deseado. Puedes solicitar un nuevo código; el anterior quedará invalidado.</p></div>
+        <div class="step"><h2>¿El código venció?</h2><p>Solicita otro desde el correo de tu cuenta. Cada solicitud reemplaza el código anterior.</p></div>
       </div>
+      <p class="back"><a href="{% url 'access-recovery-email' %}">Solicitar otro código por correo</a></p>
       <a class="back" href="{% url 'login' %}">← Volver a iniciar sesión</a>
     </section>
   </main>

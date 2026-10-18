@@ -62,6 +62,8 @@ class Account(AbstractBaseUser, PermissionsMixin):
     display_name = models.CharField(max_length=120)
     email = models.EmailField(max_length=254, unique=True)
     email_normalized = models.CharField(max_length=254, unique=True, editable=False)
+    email_verified_at = models.DateTimeField(null=True, blank=True, editable=False)
+    must_change_password = models.BooleanField(default=False)
     role = models.ForeignKey(Role, on_delete=models.PROTECT, related_name="accounts")
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -106,6 +108,9 @@ class AccountRecoveryCode(models.Model):
     class Kind(models.TextChoices):
         EMERGENCY = "EMERGENCY", "Código personal de emergencia"
         TEMPORARY = "TEMPORARY", "Código temporal emitido por el gerente"
+        EMAIL = "EMAIL", "Código enviado por correo"
+
+        EMAIL_VERIFY = "EMAIL_VERIFY", "Código de verificación de correo"
 
     account = models.ForeignKey(
         Account,
@@ -113,7 +118,7 @@ class AccountRecoveryCode(models.Model):
         related_name="recovery_codes",
     )
     digest = models.CharField(max_length=64, unique=True, editable=False)
-    kind = models.CharField(max_length=12, choices=Kind.choices)
+    kind = models.CharField(max_length=16, choices=Kind.choices)
     created_by = models.ForeignKey(
         Account,
         null=True,
@@ -151,9 +156,18 @@ class AccountAccessEvent(models.Model):
     class Event(models.TextChoices):
         EMERGENCY_CODES_ISSUED = "EMERGENCY_CODES_ISSUED", "Códigos de emergencia emitidos"
         TEMPORARY_CODE_ISSUED = "TEMPORARY_CODE_ISSUED", "Código temporal emitido"
+        EMAIL_CODE_ISSUED = "EMAIL_CODE_ISSUED", "Código enviado por correo"
+        EMAIL_DELIVERY_FAILED = "EMAIL_DELIVERY_FAILED", "No se pudo enviar el código por correo"
         RECOVERY_SUCCEEDED = "RECOVERY_SUCCEEDED", "Acceso recuperado"
         RECOVERY_FAILED = "RECOVERY_FAILED", "Recuperación rechazada"
         CODES_REVOKED = "CODES_REVOKED", "Códigos revocados"
+
+        ASSISTANT_ACCOUNT_CREATED = "ASSISTANT_ACCOUNT_CREATED", "Cuenta de asistente creada"
+        ASSISTANT_ACCOUNT_DEACTIVATED = "ASSISTANT_ACCOUNT_DEACTIVATED", "Cuenta de asistente desactivada"
+        ASSISTANT_ACCOUNT_REACTIVATED = "ASSISTANT_ACCOUNT_REACTIVATED", "Cuenta de asistente reactivada"
+        EMAIL_VERIFICATION_CODE_ISSUED = "EMAIL_VERIFICATION_CODE_ISSUED", "Código de verificación enviado"
+        EMAIL_VERIFIED = "EMAIL_VERIFIED", "Correo verificado"
+        LEGACY_ACCOUNT_DEACTIVATED = "LEGACY_ACCOUNT_DEACTIVATED", "Cuenta histórica desactivada"
 
     account = models.ForeignKey(
         Account,

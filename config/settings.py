@@ -78,6 +78,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "identity.middleware.RequireAssistantOnboardingMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -106,18 +107,18 @@ if DATABASE_URL:
     # Vercel abre conexiones efímeras. Supabase recomienda su pooler de
     # transacciones para este tipo de runtime, por lo que Django no conserva
     # conexiones entre invocaciones.
-    DATABASES = {
-        "default": dj_database_url.parse(
-            DATABASE_URL,
-            conn_max_age=0,
-            conn_health_checks=True,
-            ssl_require=True,
-        )
+    database_options = {
+        "conn_max_age": 0,
+        "conn_health_checks": True,
     }
-    DATABASES["default"].setdefault("OPTIONS", {})
-    DATABASES["default"]["OPTIONS"].setdefault("prepare_threshold", None)
-    DATABASES["default"]["OPTIONS"].setdefault("connect_timeout", 10)
-    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    if DATABASE_URL.lower().startswith(("postgres://", "postgresql://")):
+        database_options["ssl_require"] = True
+    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, **database_options)}
+    if DATABASES["default"]["ENGINE"] == "django.db.backends.postgresql":
+        DATABASES["default"].setdefault("OPTIONS", {})
+        DATABASES["default"]["OPTIONS"].setdefault("prepare_threshold", None)
+        DATABASES["default"]["OPTIONS"].setdefault("connect_timeout", 10)
+        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 else:
     DATABASES = {
         "default": {
@@ -147,6 +148,32 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# Password recovery is sent through a transactional SMTP provider in production.
+# Local development defaults to Django's console backend, so no real message is
+# sent until the deployment receives the SMTP variables documented in .env.example.
+EMAIL_BACKEND = os.environ.get(
+    "DJANGO_EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend"
+    if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend",
+).strip()
+EMAIL_HOST = os.environ.get("DJANGO_EMAIL_HOST", "").strip()
+EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "587"))
+EMAIL_USE_TLS = _environment_flag("DJANGO_EMAIL_USE_TLS", "1")
+EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_HOST_USER", "").strip()
+EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", "")
+EMAIL_TIMEOUT = int(os.environ.get("DJANGO_EMAIL_TIMEOUT", "10"))
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DJANGO_DEFAULT_FROM_EMAIL",
+    "PagoControl <no-reply@localhost>" if DEBUG else "",
+).strip()
+TURBOSMTP_API_URL = os.environ.get(
+    "TURBOSMTP_API_URL", "https://api.turbo-smtp.com/api/v2/mail/send"
+).strip()
+TURBOSMTP_CONSUMER_KEY = os.environ.get("TURBOSMTP_CONSUMER_KEY", "").strip()
+TURBOSMTP_CONSUMER_SECRET = os.environ.get("TURBOSMTP_CONSUMER_SECRET", "")
+TURBOSMTP_TIMEOUT = int(os.environ.get("TURBOSMTP_TIMEOUT", "10"))
 
 LANGUAGE_CODE = "es-pe"
 TIME_ZONE = "America/Lima"

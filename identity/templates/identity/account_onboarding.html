@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Verifica tu correo y crea tu contraseña personal de PagoControl.">
+  <title>Activa tu cuenta · PagoControl</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --ink:#102a43; --muted:#64748b; --blue:#0b70d1; --blue-dark:#0758a5; --soft:#f6f9fc; --card:#fff; --danger:#b42318; }
+    * { box-sizing:border-box; }
+    body { min-height:100vh; margin:0; padding:24px; color:var(--ink); background:radial-gradient(circle at 12% 8%,#e7f3ff 0,transparent 32%),var(--soft); font-family:Inter,system-ui,sans-serif; }
+    .shell { width:min(100%,680px); margin:32px auto; }
+    .brand { display:flex; align-items:center; gap:9px; margin-bottom:18px; color:var(--ink); font-weight:750; text-decoration:none; }
+    .brand-mark { display:grid; place-items:center; width:34px; height:34px; color:#fff; background:var(--blue); border-radius:10px; }
+    .card { padding:clamp(24px,5vw,42px); background:var(--card); border:1px solid rgba(16,42,67,.1); border-radius:22px; box-shadow:0 20px 50px rgba(34,67,100,.12); }
+    h1 { margin:0; font-size:clamp(1.55rem,4vw,2.15rem); letter-spacing:-.04em; }
+    .lead { margin:10px 0 28px; color:var(--muted); line-height:1.65; }
+    .field { margin-bottom:18px; }
+    label { display:block; margin-bottom:7px; color:#334e68; font-size:.82rem; font-weight:700; }
+    input { width:100%; min-height:46px; padding:11px 12px; color:var(--ink); background:#fff; border:1px solid #bcccdc; border-radius:9px; font:inherit; }
+    input:focus { border-color:var(--blue); outline:0; box-shadow:0 0 0 3px rgba(11,112,209,.14); }
+    .help { margin:7px 0 0; color:var(--muted); font-size:.76rem; line-height:1.5; }
+    .errorlist { margin:7px 0 0; padding:0; color:var(--danger); font-size:.78rem; list-style:none; }
+    .submit { width:100%; min-height:46px; padding:12px 15px; color:#fff; background:var(--blue); border:0; border-radius:9px; cursor:pointer; font:inherit; font-weight:750; }
+    .submit:hover { background:var(--blue-dark); }
+    .logout { display:inline-flex; min-height:44px; align-items:center; margin-top:18px; color:var(--blue-dark); font-size:.82rem; font-weight:650; }
+    @media (max-width:620px) { body { padding:16px; } .shell { margin:12px auto; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">P</span>PagoControl</div>
+    <section class="card" aria-labelledby="onboarding-title">
+      <h1 id="onboarding-title">Activa tu cuenta</h1>
+      <p class="lead">Recibiste una contraseña temporal y enviamos un código de ocho dígitos a <strong>{{ user.email }}</strong>. Verifica el código y crea una contraseña que solo tú conozcas.</p>
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="field">
+          <label for="{{ form.verification_code.id_for_label }}">{{ form.verification_code.label }}</label>
+          {{ form.verification_code }}
+          {{ form.verification_code.errors }}
+          <p class="help">El código vence en 15 minutos. Si venció o no llegó, solicita al gerente que lo reenvíe.</p>
+        </div>
+        <div class="field">
+          <label for="{{ form.new_password.id_for_label }}">{{ form.new_password.label }}</label>
+          {{ form.new_password }}
+          {{ form.new_password.errors }}
+          <p class="help">Usa 10 o más caracteres y evita contraseñas comunes o compuestas solo por números.</p>
+        </div>
+        <div class="field">
+          <label for="{{ form.confirm_password.id_for_label }}">{{ form.confirm_password.label }}</label>
+          {{ form.confirm_password }}
+          {{ form.confirm_password.errors }}
+        </div>
+        <button class="submit" type="submit">Verificar y activar mi cuenta</button>
+      </form>
+      <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="logout" type="submit">Salir de esta sesión</button></form>
+    </section>
+  </main>
+</body>
+</html>

@@ -40,7 +40,16 @@ from payments.services import (
 class P0PaymentsBaseTestCase(TestCase):
     def setUp(self):
         self._media_directory = TemporaryDirectory()
-        self._media_settings = override_settings(MEDIA_ROOT=self._media_directory.name)
+        self._media_settings = override_settings(
+            MEDIA_ROOT=self._media_directory.name,
+            USE_SUPABASE_STORAGE=False,
+            STORAGES={
+                "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+                "staticfiles": {
+                    "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+                },
+            },
+        )
         self._media_settings.enable()
         self.addCleanup(self._media_directory.cleanup)
         self.addCleanup(self._media_settings.disable)
