@@ -48,6 +48,22 @@ class TurboSMTPEmailBackend(BaseEmailBackend):
                 break
         return payload
 
+    @staticmethod
+    def _provider_outcome(response_body: str) -> str:
+        """Return a log-safe provider outcome without retaining response data."""
+        try:
+            payload = json.loads(response_body)
+        except (TypeError, ValueError):
+            return "INVALID_JSON"
+
+        if not isinstance(payload, dict):
+            return "UNEXPECTED_JSON"
+
+        outcome = payload.get("message")
+        if isinstance(outcome, str) and outcome.strip():
+            return outcome.strip().upper()[:32]
+        return "MISSING_MESSAGE"
+
     def send_messages(self, email_messages):
         if not email_messages:
             return 0
@@ -78,9 +94,28 @@ class TurboSMTPEmailBackend(BaseEmailBackend):
                     response_body = response.read().decode("utf-8", errors="replace")
                 result = json.loads(response_body) if response_body else {}
                 if not 200 <= response.status < 300 or str(result.get("message", "")).upper() != "OK":
+                    logger.warning(
+                        "TurboSMTP rechazó un correo transaccional "
+                        "(status=%s, outcome=%s).",
+                        response.status,
+                        self._provider_outcome(response_body),
+                    )
                     raise SMTPException("TurboSMTP rechazó el envío del correo.")
-            except (HTTPError, URLError, TimeoutError, ValueError, SMTPException) as error:
-                logger.warning("TurboSMTP no aceptó un correo transaccional: %s", error)
+            except HTTPError as error:
+                response_body = error.read().decode("utf-8", errors="replace")
+                logger.warning(
+                    "TurboSMTP rechazó un correo transaccional "
+                    "(status=%s, outcome=%s).",
+                    error.code,
+                    self._provider_outcome(response_body),
+                )
+                if not self.fail_silently:
+                    raise SMTPException("No se pudo enviar el correo transaccional.") from error
+            except (URLError, TimeoutError, ValueError, SMTPException) as error:
+                logger.warning(
+                    "TurboSMTP no aceptó un correo transaccional (category=%s).",
+                    type(error).__name__,
+                )
                 if not self.fail_silently:
                     raise SMTPException("No se pudo enviar el correo transaccional.") from error
             else:

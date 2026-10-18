@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from io import BytesIO
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from django.core.mail import EmailMultiAlternatives, get_connection
 from django.test import SimpleTestCase, override_settings
@@ -60,3 +61,28 @@ class TurboSMTPEmailBackendTests(SimpleTestCase):
 
         with self.assertRaisesMessage(Exception, "TurboSMTP no está configurado"):
             get_connection().send_messages([message])
+
+    @patch("identity.email_backends.urlopen")
+    def test_logs_provider_http_status_without_sensitive_request_data(self, mocked_urlopen):
+        mocked_urlopen.side_effect = HTTPError(
+            "https://mail.example.test/api/v2/mail/send",
+            401,
+            "Unauthorized",
+            None,
+            BytesIO(b'{"message":"error"}'),
+        )
+        message = EmailMultiAlternatives(
+            subject="Código de prueba",
+            body="Texto seguro",
+            to=["destinatario@example.com"],
+        )
+
+        with self.assertLogs("identity.email_backends", level="WARNING") as captured:
+            with self.assertRaisesMessage(Exception, "No se pudo enviar el correo transaccional"):
+                get_connection().send_messages([message])
+
+        log_output = "\n".join(captured.output)
+        self.assertIn("status=401", log_output)
+        self.assertIn("outcome=ERROR", log_output)
+        self.assertNotIn("consumer-key-test", log_output)
+        self.assertNotIn("destinatario@example.com", log_output)

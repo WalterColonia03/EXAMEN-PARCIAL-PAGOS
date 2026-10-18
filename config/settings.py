@@ -172,7 +172,7 @@ TURBOSMTP_API_URL = os.environ.get(
     "TURBOSMTP_API_URL", "https://api.turbo-smtp.com/api/v2/mail/send"
 ).strip()
 TURBOSMTP_CONSUMER_KEY = os.environ.get("TURBOSMTP_CONSUMER_KEY", "").strip()
-TURBOSMTP_CONSUMER_SECRET = os.environ.get("TURBOSMTP_CONSUMER_SECRET", "")
+TURBOSMTP_CONSUMER_SECRET = os.environ.get("TURBOSMTP_CONSUMER_SECRET", "").strip()
 TURBOSMTP_TIMEOUT = int(os.environ.get("TURBOSMTP_TIMEOUT", "10"))
 
 LANGUAGE_CODE = "es-pe"
