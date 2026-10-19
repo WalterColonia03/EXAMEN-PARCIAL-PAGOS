@@ -22,6 +22,7 @@
     <div class="check" aria-hidden="true">✉</div>
     <h1>Revisa tu correo</h1>
     <p>Si la dirección corresponde a una cuenta activa, recibirás un código de 8 dígitos. Revisa también correo no deseado. Por seguridad, esta pantalla no confirma si una cuenta existe.</p>
+    <p>Para conservar el código vigente, espera {{ resend_cooldown_seconds }} segundos antes de solicitar otro. El proveedor suele aceptarlo en segundos; la llegada al buzón depende de su autenticación y filtros.</p>
     <a href="{% url 'access-recovery' %}">Ingresar mi código</a>
     <a class="secondary" href="{% url 'login' %}">Volver a iniciar sesión</a>
   </main>

@@ -29,6 +29,7 @@ from .services import (
     InvalidRecoveryCode,
     change_account_password,
     issue_email_recovery_code,
+    RecoveryEmailResendTooSoon,
     recover_account_access,
     RecoveryEmailDeliveryError,
     resend_assistant_verification,
@@ -211,23 +212,38 @@ def request_email_recovery(request):
             if account:
                 try:
                     code, expires_at = issue_email_recovery_code(account)
-                    send_email_recovery_code(account, code, expires_at)
-                except RecoveryEmailDeliveryError:
-                    revoke_email_recovery_codes(account)
-                cache.set(
-                    key,
-                    requests + 1,
-                    EMAIL_RECOVERY_REQUEST_WINDOW_SECONDS,
-                )
+                except RecoveryEmailResendTooSoon:
+                    pass
+                else:
+                    try:
+                        send_email_recovery_code(account, code, expires_at)
+                    except RecoveryEmailDeliveryError:
+                        revoke_email_recovery_codes(account)
+            cache.set(
+                key,
+                requests + 1,
+                EMAIL_RECOVERY_REQUEST_WINDOW_SECONDS,
+            )
         return redirect("access-recovery-email-sent")
 
-    return render(request, "identity/request_email_recovery.html", {"form": form})
+    return render(
+        request,
+        "identity/request_email_recovery.html",
+        {
+            "form": form,
+            "resend_cooldown_seconds": settings.EMAIL_RECOVERY_RESEND_COOLDOWN_SECONDS,
+        },
+    )
 
 
 @never_cache
 @require_GET
 def recovery_email_sent(request):
-    return render(request, "identity/recovery_email_sent.html")
+    return render(
+        request,
+        "identity/recovery_email_sent.html",
+        {"resend_cooldown_seconds": settings.EMAIL_RECOVERY_RESEND_COOLDOWN_SECONDS},
+    )
 
 
 @never_cache
@@ -271,7 +287,14 @@ def recover_access(request):
                 request.session["recovered_account_email"] = account.email
                 return redirect("access-recovery-complete")
 
-    return render(request, "identity/recover_access.html", {"form": form})
+    return render(
+        request,
+        "identity/recover_access.html",
+        {
+            "form": form,
+            "resend_cooldown_seconds": settings.EMAIL_RECOVERY_RESEND_COOLDOWN_SECONDS,
+        },
+    )
 
 
 @never_cache

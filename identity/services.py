@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import secrets
 from datetime import datetime, timedelta
+from time import monotonic
 
 from django.conf import settings
 from django.contrib.auth import SESSION_KEY
@@ -55,6 +56,16 @@ class RecoveryEmailDeliveryError(Exception):
     """Raised when a password-recovery email cannot be delivered."""
 
 
+class RecoveryEmailResendTooSoon(Exception):
+    """Raised when a still-valid recovery code was requested moments ago."""
+
+
+def _email_recovery_resend_cooldown() -> timedelta:
+    return timedelta(
+        seconds=max(0, settings.EMAIL_RECOVERY_RESEND_COOLDOWN_SECONDS)
+    )
+
+
 def _validate_provisioned_email(email: str) -> str:
     normalized = Account.normalize_email(email)
     validate_email(normalized)
@@ -103,6 +114,23 @@ def issue_email_recovery_code(account: Account) -> tuple[str, datetime]:
         raise PermissionError("La cuenta no está activa.")
 
     account = Account.objects.select_for_update().get(pk=account.pk)
+    now = timezone.now()
+    cooldown_started_at = now - _email_recovery_resend_cooldown()
+    recently_issued = (
+        AccountRecoveryCode.objects.filter(
+            account=account,
+            kind=AccountRecoveryCode.Kind.EMAIL,
+            used_at__isnull=True,
+            revoked_at__isnull=True,
+            expires_at__gt=now,
+            created_at__gt=cooldown_started_at,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if recently_issued:
+        raise RecoveryEmailResendTooSoon
+
     revoked = _revoke_available_codes(account, AccountRecoveryCode.Kind.EMAIL)
     if revoked:
         AccountAccessEvent.objects.create(
@@ -111,7 +139,7 @@ def issue_email_recovery_code(account: Account) -> tuple[str, datetime]:
             summary="Se reemplazó un código de recuperación enviado por correo.",
         )
 
-    expires_at = timezone.now() + EMAIL_RECOVERY_CODE_LIFETIME
+    expires_at = now + EMAIL_RECOVERY_CODE_LIFETIME
     for _ in range(3):
         plain_code, digest = _new_email_recovery_code()
         try:
@@ -128,11 +156,6 @@ def issue_email_recovery_code(account: Account) -> tuple[str, datetime]:
     else:
         raise RuntimeError("No se pudo generar un código de recuperación único.")
 
-    AccountAccessEvent.objects.create(
-        account=account,
-        event=AccountAccessEvent.Event.EMAIL_CODE_ISSUED,
-        summary="Se envió un código de recuperación por correo con vigencia de 15 minutos.",
-    )
     return plain_code, expires_at
 
 
@@ -161,6 +184,7 @@ def send_email_recovery_code(account: Account, code: str, expires_at: datetime) 
         f"El código vence en {minutes} minutos y solo puede usarse una vez. "
         "Si no solicitaste este cambio, ignora este correo; tu contraseña no se modificará.\n"
     )
+    started_at = monotonic()
     try:
         delivered = send_mail(
             subject,
@@ -174,6 +198,15 @@ def send_email_recovery_code(account: Account, code: str, expires_at: datetime) 
         raise RecoveryEmailDeliveryError from error
     if delivered != 1:
         raise RecoveryEmailDeliveryError("El proveedor de correo no aceptó el mensaje.")
+    elapsed_ms = round((monotonic() - started_at) * 1000)
+    AccountAccessEvent.objects.create(
+        account=account,
+        event=AccountAccessEvent.Event.EMAIL_CODE_ISSUED,
+        summary=(
+            "El proveedor de correo aceptó el código de recuperación "
+            f"en {elapsed_ms} ms; vence en 15 minutos."
+        ),
+    )
 
 
 @transaction.atomic

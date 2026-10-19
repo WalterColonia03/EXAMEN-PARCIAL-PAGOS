@@ -67,7 +67,7 @@
       </form>
 
       <div class="next-steps" aria-label="Ayuda para el código enviado por correo">
-        <div class="step"><h2>¿No recibiste el correo?</h2><p>Revisa correo no deseado. Puedes solicitar un nuevo código; el anterior quedará invalidado.</p></div>
+        <div class="step"><h2>¿No recibiste el correo?</h2><p>Revisa correo no deseado. Espera {{ resend_cooldown_seconds }} segundos antes de solicitar otro para conservar el código vigente.</p></div>
         <div class="step"><h2>¿El código venció?</h2><p>Solicita otro desde el correo de tu cuenta. Cada solicitud reemplaza el código anterior.</p></div>
       </div>
       <p class="back"><a href="{% url 'access-recovery-email' %}">Solicitar otro código por correo</a></p>

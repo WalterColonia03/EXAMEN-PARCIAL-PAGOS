@@ -41,7 +41,7 @@
         <label for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
         {{ form.email }}
         {% if form.email.errors %}<div id="email-error" role="alert">{{ form.email.errors }}</div>{% endif %}
-        <p class="help">No compartas el código con nadie. PagoControl nunca te pedirá tu contraseña por correo.</p>
+        <p class="help">No compartas el código con nadie. PagoControl nunca te pedirá tu contraseña por correo. Si no llega, espera {{ resend_cooldown_seconds }} segundos antes de pedir otro para conservar el código vigente.</p>
         <button class="submit" type="submit">Enviar código de recuperación</button>
       </form>
       <a class="back" href="{% url 'access-recovery' %}">Ya tengo el código que recibí por correo</a><br>

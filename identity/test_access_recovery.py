@@ -11,7 +11,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import AccountRecoveryCode, Role
+from .models import AccountAccessEvent, AccountRecoveryCode, Role
 from .services import recovery_code_digest
 
 
@@ -177,6 +177,67 @@ class AccessRecoveryTests(TestCase):
         self.assertFalse(
             AccountRecoveryCode.objects.filter(kind=AccountRecoveryCode.Kind.EMAIL).exists()
         )
+
+    def test_recovery_request_within_cooldown_preserves_the_active_code(self):
+        first_code = self.request_email_code(self.manager)
+        first_record = AccountRecoveryCode.objects.get(
+            account=self.manager,
+            kind=AccountRecoveryCode.Kind.EMAIL,
+        )
+
+        repeated = self.client.post(
+            reverse("access-recovery-email"),
+            {"email": self.manager.email},
+        )
+
+        self.assertRedirects(
+            repeated,
+            reverse("access-recovery-email-sent"),
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(
+            AccountRecoveryCode.objects.filter(
+                account=self.manager,
+                kind=AccountRecoveryCode.Kind.EMAIL,
+            ).count(),
+            1,
+        )
+        first_record.refresh_from_db()
+        self.assertTrue(first_record.is_available)
+        self.assertEqual(
+            AccountAccessEvent.objects.filter(
+                account=self.manager,
+                event=AccountAccessEvent.Event.EMAIL_CODE_ISSUED,
+            ).count(),
+            1,
+        )
+
+        recovered = self.client.post(
+            reverse("access-recovery"),
+            {
+                "recovery_code": first_code,
+                "new_password": "Marea-Clara-2026!",
+                "confirm_password": "Marea-Clara-2026!",
+            },
+        )
+
+        self.assertRedirects(
+            recovered,
+            reverse("access-recovery-complete"),
+            fetch_redirect_response=False,
+        )
+
+    def test_recovery_event_is_created_only_after_the_provider_accepts_the_email(self):
+        self.request_email_code(self.manager)
+
+        event = AccountAccessEvent.objects.get(
+            account=self.manager,
+            event=AccountAccessEvent.Event.EMAIL_CODE_ISSUED,
+        )
+
+        self.assertIn("aceptó el código de recuperación", event.summary)
+        self.assertIn("ms", event.summary)
 
     def test_authenticated_user_can_change_password_and_keep_the_current_session(self):
         self.client.force_login(self.manager)

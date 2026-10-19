@@ -32,9 +32,10 @@ Registre valores reales exclusivamente en Vercel; `.env.example` no contiene sec
 | `TURBOSMTP_CONSUMER_KEY` | Consumer Key de TurboSMTP. |
 | `TURBOSMTP_CONSUMER_SECRET` | Consumer Secret de TurboSMTP. |
 | `TURBOSMTP_TIMEOUT` | `10` segundos salvo necesidad justificada. |
+| `EMAIL_RECOVERY_RESEND_COOLDOWN_SECONDS` | `60` para evitar invalidar un código recién solicitado. |
 | `DJANGO_DEFAULT_FROM_EMAIL` | Dirección remitente autorizada por TurboSMTP. |
 
-El remitente debe ser una dirección autorizada por TurboSMTP. La contraseña personal del buzón no se utiliza ni se almacena en PagoControl.
+El remitente debe pertenecer a un dominio propio verificado en TurboSMTP, con SPF, DKIM y DMARC configurados. No use una dirección `@gmail.com`, `@hotmail.com` u `@outlook.com` como remitente a través de TurboSMTP: esos dominios no pueden autorizar esta aplicación y los buzones pueden retrasar o filtrar los mensajes. La contraseña personal del buzón no se utiliza ni se almacena en PagoControl.
 
 ## Liberación
 
